@@ -70,19 +70,7 @@ public class FortuneGenerator {
    * @param allSignIds 全部星座 id（按 id 升序），用于挑选速配星座
    */
   public FortuneDaily generate(Long signId, LocalDate date, List<Long> allSignIds) {
-    // 固定种子：同一星座同一天结果永远一致
-    // 为什么种子要再混洗：相邻日期算出的原始种子也相邻（只差 1），
-    // 而 java.util.Random 是线性同余生成器，相邻种子的第一次 nextInt 输出
-    // 高度相关（高位几乎不动），导致"第一个抽取的评分"连续多天卡在同一个值。
-    // 所以先用 murmur3 风格的 64 位 finalizer 把种子打散（雪崩效应），
-    // 让相邻日期的结果互不相关，同时保持同样的输入永远得到同样的种子（确定性不变）。
-    long seed = signId * 1000003L + date.toEpochDay();
-    seed ^= seed >>> 33;
-    seed *= 0xff51afd7ed558ccdL;
-    seed ^= seed >>> 33;
-    seed *= 0xc4ceb9fe1a85ec53L;
-    seed ^= seed >>> 33;
-    Random random = new Random(seed);
+    Random random = newSeededRandom(signId, date, 0);
 
     FortuneDaily fortune = new FortuneDaily();
     fortune.setSignId(signId);
@@ -113,6 +101,43 @@ public class FortuneGenerator {
     fortune.setPairSignId(pickPairSign(signId, allSignIds, random));
 
     return fortune;
+  }
+
+  /**
+   * 构造混洗过的确定性随机源。
+   * 固定种子：同一星座同一天结果永远一致。
+   * 为什么种子要再混洗：相邻日期算出的原始种子也相邻（只差 1），
+   * 而 java.util.Random 是线性同余生成器，相邻种子的第一次 nextInt 输出
+   * 高度相关（高位几乎不动），导致"第一个抽取的评分"连续多天卡在同一个值。
+   * 所以先用 murmur3 风格的 64 位 finalizer 把种子打散（雪崩效应），
+   * 让相邻日期的结果互不相关，同时保持同样的输入永远得到同样的种子（确定性不变）。
+   *
+   * @param salt 用途盐值：不同用途用不同盐，避免各随机流互相撞车（0 = 主运势生成）
+   * 注意：impl 子包和本类不在同一个包，所以方法是 public（包可见够不着）
+   */
+  public Random newSeededRandom(Long signId, LocalDate date, long salt) {
+    long seed = signId * 1000003L + date.toEpochDay() + salt * 0x9e3779b97f4a7c15L;
+    seed ^= seed >>> 33;
+    seed *= 0xff51afd7ed558ccdL;
+    seed ^= seed >>> 33;
+    seed *= 0xc4ceb9fe1a85ec53L;
+    seed ^= seed >>> 33;
+    return new Random(seed);
+  }
+
+  /**
+   * 只生成"宜"文案：ShowAPI 不提供宜忌，混合模式（接口数据 + 本地宜忌）从这里取，
+   * 用独立盐值的种子，和主生成流程互不干扰，同一星座同一天结果固定
+   */
+  public String generateDoText(Long signId, LocalDate date) {
+    return pickThree(DO_POOL, newSeededRandom(signId, date, 1));
+  }
+
+  /**
+   * 只生成"忌"文案，同上
+   */
+  public String generateDontText(Long signId, LocalDate date) {
+    return pickThree(DONT_POOL, newSeededRandom(signId, date, 2));
   }
 
   private String pickOne(String[] pool, Random random) {
