@@ -1,23 +1,37 @@
 package com.starwhisper.server.entity;
 
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
 /**
  * 星座
  */
+@Entity                          // 新增：这个类对应一张数据库表
+@Table(name = "signs")           // 新增：表名叫 signs
 public class Sign {
 
-  private Long id;          // 主键
-  private String name;      // 中文名：白羊座
-  private String nameEn;    // 英文名：aries（前端传参用这个）
-  private String emoji;     // 符号：♈
-  private String element;   // 象：火象/土象/风象/水象
-  private String dateRange; // 日期范围展示：03.21-04.19
+  @Id                          // 新增：主键
+  @GeneratedValue(strategy = GenerationType.IDENTITY)  // 新增：自增（数据库自动生成）
+  private Long id;
+
+  private String name;
+  private String nameEn;
+  private String emoji;      // 符号：♈
+  private String element;    // 象：火象/土象/风象/水象
+  private String dateRange;  // 日期范围展示：03.21-04.19
   private Integer startMonth; // 起始月（算星座用）
   private Integer startDay;
   private Integer endMonth;   // 结束月
   private Integer endDay;
+  // ... 其余字段和 getter/setter 不动
 
-  public Sign(Long id, String name, String nameEn, String emoji, String element,
-              String dateRange, Integer startMonth, Integer startDay, Integer endMonth, Integer endDay) {
+  public Sign() {
+  }
+
+  public Sign(Long id, String name, String nameEn, String emoji, String element, String dateRange, Integer startMonth, Integer startDay, Integer endMonth, Integer endDay) {
     this.id = id;
     this.name = name;
     this.nameEn = nameEn;
@@ -29,9 +43,6 @@ public class Sign {
     this.endMonth = endMonth;
     this.endDay = endDay;
   }
-
-  // ===== 以下 getter/setter 不用手敲 =====
-  // 在类里按 Alt + Insert → 选「Getter 和 Setter」→ 全选所有字段 → 确定
 
   public Long getId() {
     return id;
