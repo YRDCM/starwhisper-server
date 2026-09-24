@@ -47,6 +47,28 @@ public class FortuneDaily {
 
   private Long pairSignId;      // 速配星座（同样是 signs.id）
 
+  // ↓↓↓ 第 5 课：接入外部数据源（万维易源 ShowAPI）后新增的字段，都允许为空 ↓↓↓
+
+  private String luckyDirection; // 吉利方位（ShowAPI 提供，本地生成没有，为 null）
+
+  @Column(length = 512)
+  private String dayNotice;     // 今日提醒（ShowAPI 提供）
+
+  @Column(length = 512)
+  private String loveTxt;       // 爱情运详解段落
+
+  @Column(length = 512)
+  private String workTxt;       // 事业运详解段落
+
+  @Column(length = 512)
+  private String moneyTxt;      // 财运详解段落
+
+  @Column(length = 512)
+  private String healthTxt;     // 健康运详解（暂时没有数据源提供，预留）
+
+  @Column(length = 16)
+  private String source = "LOCAL"; // 数据来源：LOCAL=本地生成，SHOWAPI=万维易源接口
+
   public FortuneDaily() {
   }
 
@@ -168,5 +190,61 @@ public class FortuneDaily {
 
   public void setPairSignId(Long pairSignId) {
     this.pairSignId = pairSignId;
+  }
+
+  public String getLuckyDirection() {
+    return luckyDirection;
+  }
+
+  public void setLuckyDirection(String luckyDirection) {
+    this.luckyDirection = luckyDirection;
+  }
+
+  public String getDayNotice() {
+    return dayNotice;
+  }
+
+  public void setDayNotice(String dayNotice) {
+    this.dayNotice = dayNotice;
+  }
+
+  public String getLoveTxt() {
+    return loveTxt;
+  }
+
+  public void setLoveTxt(String loveTxt) {
+    this.loveTxt = loveTxt;
+  }
+
+  public String getWorkTxt() {
+    return workTxt;
+  }
+
+  public void setWorkTxt(String workTxt) {
+    this.workTxt = workTxt;
+  }
+
+  public String getMoneyTxt() {
+    return moneyTxt;
+  }
+
+  public void setMoneyTxt(String moneyTxt) {
+    this.moneyTxt = moneyTxt;
+  }
+
+  public String getHealthTxt() {
+    return healthTxt;
+  }
+
+  public void setHealthTxt(String healthTxt) {
+    this.healthTxt = healthTxt;
+  }
+
+  public String getSource() {
+    return source;
+  }
+
+  public void setSource(String source) {
+    this.source = source;
   }
 }
