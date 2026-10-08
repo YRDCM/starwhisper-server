@@ -1,5 +1,7 @@
 package com.starwhisper.server.service;
 
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.entity.UserSession;
 import com.starwhisper.server.repository.AppUserRepository;
@@ -7,7 +9,6 @@ import com.starwhisper.server.repository.UserSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -36,6 +37,7 @@ public class AuthService {
   private final AppUserRepository appUserRepository;
   private final UserSessionRepository userSessionRepository;
   private final RestClient restClient;
+  private final ObjectMapper objectMapper = new ObjectMapper();
   private final String wechatAppid;
   private final String wechatSecret;
   private final boolean devLoginEnabled;
@@ -69,7 +71,8 @@ public class AuthService {
       throw new IllegalStateException("微信登录未配置");
     }
 
-    Map<String, Object> response = restClient.get()
+    // 微信返回的是 JSON 但 Content-Type 是 text/plain，先按 String 收再手动解析
+    String raw = restClient.get()
         .uri(uriBuilder -> uriBuilder
             .scheme("https").host("api.weixin.qq.com").path("/sns/jscode2session")
             .queryParam("appid", wechatAppid)
@@ -78,8 +81,15 @@ public class AuthService {
             .queryParam("grant_type", "authorization_code")
             .build())
         .retrieve()
-        .body(new ParameterizedTypeReference<>() {
-        });
+        .body(String.class);
+
+    Map<String, Object> response;
+    try {
+      response = objectMapper.readValue(raw, new TypeReference<>() {
+      });
+    } catch (Exception e) {
+      throw new IllegalStateException("微信接口返回无法解析：" + raw);
+    }
 
     if (response == null) {
       throw new IllegalStateException("微信接口无响应");
