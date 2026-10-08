@@ -1,5 +1,6 @@
 package com.starwhisper.server.service;
 
+import com.starwhisper.server.dto.DrawResultVO;
 import com.starwhisper.server.dto.DrawnCardVO;
 import com.starwhisper.server.dto.TarotCardVO;
 import com.starwhisper.server.entity.Sign;
@@ -28,9 +29,6 @@ public class TarotService {
   private static final Map<String, Integer> GROUP_ORDER = Map.of(
       "MAJOR", 0, "WANDS", 1, "CUPS", 2, "SWORDS", 3, "PENTACLES", 4);
 
-  // 三张牌阵的位置名
-  private static final String[] POSITIONS_THREE = {"过去", "现在", "未来"};
-
   // 每日一牌的盐值：和运势模块的随机流区分开（运势主流程是 0，宜忌是 1/2）
   private static final long TAROT_DAILY_SALT = 100;
 
@@ -54,26 +52,23 @@ public class TarotService {
   }
 
   /**
-   * 随机抽牌：count 只能是 1（单张）或 3（过去/现在/未来牌阵）
-   * 一次抽牌内不会有重复的牌，每张牌独立掷 50/50 决定正逆位
+   * 按牌阵随机抽牌：
+   * 一次抽牌内不会有重复的牌，每张牌独立掷 50/50 决定正逆位，
+   * 第 i 张牌放到牌阵的第 i 个牌位上
    */
-  public List<DrawnCardVO> draw(int count) {
-    if (count != 1 && count != 3) {
-      throw new IllegalArgumentException("抽牌数量只支持 1 张或 3 张，收到：" + count);
-    }
-
+  public DrawResultVO draw(TarotSpread spread) {
     List<TarotCard> deck = new ArrayList<>(orderedDeck());
     // SecureRandom：抽牌是"占卜"场景，要的是不可预测的真随机
     SecureRandom secureRandom = new SecureRandom();
     java.util.Collections.shuffle(deck, secureRandom);
 
+    String[] positions = spread.getPositions();
     List<DrawnCardVO> drawn = new ArrayList<>();
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < spread.getCount(); i++) {
       boolean upright = secureRandom.nextBoolean();
-      String position = (count == 3) ? POSITIONS_THREE[i] : null;
-      drawn.add(DrawnCardVO.of(deck.get(i), upright, position));
+      drawn.add(DrawnCardVO.of(deck.get(i), upright, positions[i]));
     }
-    return drawn;
+    return new DrawResultVO(spread.getKey(), spread.getName(), drawn);
   }
 
   /**

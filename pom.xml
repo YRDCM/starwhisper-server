@@ -55,6 +55,8 @@
   </dependencies>
 
   <build>
+    <!-- 打包出来的 jar 固定叫 starwhisper-server.jar（不带版本号），服务器部署脚本引用起来稳定 -->
+    <finalName>starwhisper-server</finalName>
     <plugins>
       <plugin>
         <groupId>org.springframework.boot</groupId>

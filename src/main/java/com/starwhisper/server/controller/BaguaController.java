@@ -1,9 +1,13 @@
 package com.starwhisper.server.controller;
 
+import com.starwhisper.server.common.CurrentUser;
 import com.starwhisper.server.common.Result;
 import com.starwhisper.server.dto.CastVO;
 import com.starwhisper.server.dto.HexagramVO;
+import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.service.BaguaService;
+import com.starwhisper.server.service.UserHistoryService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,10 +24,12 @@ import java.util.List;
 public class BaguaController {
 
   private final BaguaService baguaService;
+  private final UserHistoryService userHistoryService;
 
   // 构造注入
-  public BaguaController(BaguaService baguaService) {
+  public BaguaController(BaguaService baguaService, UserHistoryService userHistoryService) {
     this.baguaService = baguaService;
+    this.userHistoryService = userHistoryService;
   }
 
   /**
@@ -36,10 +42,18 @@ public class BaguaController {
 
   /**
    * 三枚铜钱法起卦：POST /api/bagua/cast
+   * 登录用户会自动记一条占卜历史（游客起卦不记）
    */
   @PostMapping("/cast")
-  public Result<CastVO> cast() {
-    return Result.success(baguaService.cast());
+  public Result<CastVO> cast(HttpServletRequest request) {
+    CastVO cast = baguaService.cast();
+
+    // 登录用户记历史；记录失败不影响起卦（service 内部已兜底）
+    AppUser user = CurrentUser.get(request);
+    if (user != null) {
+      userHistoryService.record(user, "BAGUA", buildCastTitle(cast), cast);
+    }
+    return Result.success(cast);
   }
 
   /**
@@ -49,5 +63,16 @@ public class BaguaController {
   @GetMapping("/daily")
   public Result<HexagramVO> daily(@RequestParam(required = false) String sign) {
     return Result.success(baguaService.daily(sign));
+  }
+
+  /**
+   * 历史标题：铜钱起卦 · 雷水解 → 雷地豫（无变爻则没有箭头后半段）
+   */
+  private String buildCastTitle(CastVO cast) {
+    String title = "铜钱起卦 · " + cast.getPrimary().getName();
+    if (cast.getChanged() != null) {
+      title += " → " + cast.getChanged().getName();
+    }
+    return title;
   }
 }

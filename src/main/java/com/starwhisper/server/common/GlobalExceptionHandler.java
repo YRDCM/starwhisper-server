@@ -15,6 +15,16 @@ public class GlobalExceptionHandler {
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   /**
+   * 业务参数/状态异常：把具体错误信息透给前端（如"不认识的星座""微信登录未配置"），
+   * 这类消息本来就是写给用户看的，不算泄露内部信息
+   */
+  @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+  public Result<Void> handleBusinessException(RuntimeException e) {
+    log.warn("业务异常：{}", e.getMessage());
+    return Result.error(e.getMessage());
+  }
+
+  /**
    * 兜底处理所有未捕获异常
    */
   @ExceptionHandler(Exception.class)

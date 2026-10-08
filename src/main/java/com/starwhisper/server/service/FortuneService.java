@@ -122,6 +122,35 @@ public class FortuneService {
   }
 
   /**
+   * 每日运势预热：定时任务调用，把 12 星座今天的运势提前生成/拉取并落库，
+   * 用户访问时直接读库秒回。单星座失败不中断整体（provider 链内部已有回退，
+   * 这里的 try-catch 是最后一道保险）
+   */
+  public void prewarmToday() {
+    List<Sign> signs = signRepository.findAllByOrderByIdAsc();
+    LocalDate today = LocalDate.now();
+
+    int success = 0;
+    for (Sign sign : signs) {
+      try {
+        getFortune(sign.getNameEn(), today);
+        success++;
+      } catch (Exception e) {
+        log.warn("预热失败：sign={}, 原因={}", sign.getNameEn(), e.getMessage());
+      }
+      // 免费档接口有频率限制，12 个星座连着打会触发限流（实测间隔 ~60ms 时后 8 个全被弹回），
+      // 每个星座之间歇 1 秒，宁可预热慢一点也别被限流逼回本地兜底
+      try {
+        Thread.sleep(1000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    log.info("每日运势预热完成：成功 {}/{}", success, signs.size());
+  }
+
+  /**
    * 解析星座参数：先试英文名（忽略大小写），再试中文名，都不认识就报错
    * 异常交给全局异常处理器统一返回
    */
