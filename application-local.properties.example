@@ -1,0 +1,9 @@
+# 本地开发密钥（真实值），本文件已被 .gitignore 忽略，绝不提交！
+# 复制本文件为 application-local.properties 并填入真实值即可本地运行。
+
+# ShowAPI 星座运势 appKey（showapi.com 控制台获取）
+showapi.appKey=在这里填你的ShowAPI-appKey
+
+# 微信小程序
+wechat.appid=在这里填小程序AppID
+wechat.secret=在这里填小程序AppSecret
