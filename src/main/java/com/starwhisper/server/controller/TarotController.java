@@ -45,7 +45,7 @@ public class TarotController {
 
   /**
    * 抽牌：POST /api/tarot/draw
-   * 新参数 spread=single/three/choice/love；
+   * 新参数 spread=single/three/choice/love/celtic/hexagram；
    * 兼容老参数 count（1→single，3→three），都不传等同 single
    * 登录用户会自动记一条占卜历史（游客抽牌不记）
    */

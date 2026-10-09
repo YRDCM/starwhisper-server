@@ -25,11 +25,11 @@ public class UserHistory {
   @Column(length = 16)
   private String type;          // TAROT 塔罗 / BAGUA 易经
 
-  @Column(length = 128)
-  private String title;         // 摘要标题，如 "三牌阵 · 宝剑八(正)/圣杯三(逆)/星币九(正)"
+  @Column(length = 512)
+  private String title;         // 摘要标题，10 牌阵全列出牌面约 200 字符，128 放不下
 
-  // 实测三张牌阵的完整 JSON 约 1.5K 字符，1024 放不下，放宽到 4096
-  @Column(length = 4096)
+  // 实测三张牌阵的完整 JSON 约 1.5K，凯尔特十字 10 牌阵约 6-8K，varchar 存不下，用 TEXT（64K）
+  @Column(columnDefinition = "TEXT")
   private String detail;        // 结果明细的 JSON 字符串
 
   private LocalDateTime createdAt;

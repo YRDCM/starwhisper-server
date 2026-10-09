@@ -8,7 +8,7 @@ import java.util.List;
  */
 public class DrawResultVO {
 
-  private String spread;            // 牌阵 key：single/three/choice/love
+  private String spread;            // 牌阵 key：single/three/choice/love/celtic/hexagram
   private String spreadName;        // 牌阵中文名
   private List<DrawnCardVO> cards;  // 抽到的牌（按抽牌顺序，牌位已解析进每张牌）
 

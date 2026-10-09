@@ -63,10 +63,11 @@ public class TarotService {
     java.util.Collections.shuffle(deck, secureRandom);
 
     String[] positions = spread.getPositions();
+    String[] positionDescs = spread.getPositionDescs();
     List<DrawnCardVO> drawn = new ArrayList<>();
     for (int i = 0; i < spread.getCount(); i++) {
       boolean upright = secureRandom.nextBoolean();
-      drawn.add(DrawnCardVO.of(deck.get(i), upright, positions[i]));
+      drawn.add(DrawnCardVO.of(deck.get(i), upright, positions[i], positionDescs[i]));
     }
     return new DrawResultVO(spread.getKey(), spread.getName(), drawn);
   }
