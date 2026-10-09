@@ -145,10 +145,12 @@ public class MatchService {
     vo.setScores(scores);
 
     vo.setProportion(textValue(body.get("proportion")));
-    vo.setSuggest(textValue(body.get("suggest")));
-    vo.setPredestination(textValue(body.get("predestination")));
-    vo.setMatchCase(textValue(body.get("match_case")));
-    vo.setAttention(textValue(body.get("attention")));
+    // ShowAPI 原文普遍过长（suggest/attention 近 200 字，match_case 上千字），
+    // 按用户要求做句级精简：建议 ≤50 字，点评/解析 ≤80 字，整句截取不断句
+    vo.setSuggest(condense(textValue(body.get("suggest")), 50));
+    vo.setPredestination(condense(textValue(body.get("predestination")), 80));
+    vo.setMatchCase(condense(textValue(body.get("match_case")), 80));
+    vo.setAttention(condense(textValue(body.get("attention")), 80));
     vo.setReview(textValue(body.get("review")));
     return vo;
   }
@@ -298,6 +300,37 @@ public class MatchService {
       }
     }
     return null;
+  }
+
+  /**
+   * 文案精简：按完整句子截取（。！？；结尾），尽量保留前几句有信息量的内容，
+   * 绝不在句子中间砍断。首句就超长才硬截并加省略号
+   */
+  private String condense(String text, int maxChars) {
+    if (text == null || text.length() <= maxChars) {
+      return text;
+    }
+    StringBuilder kept = new StringBuilder();
+    int sentenceEnd = -1; // 上一个句末标点位置
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (c == '。' || c == '！' || c == '？' || c == '；') {
+        // 收下这句话会超限就停（但至少要保住第一句）
+        if (i + 1 > maxChars && kept.length() > 0) {
+          break;
+        }
+        kept.append(text, sentenceEnd + 1, i + 1);
+        sentenceEnd = i;
+        if (kept.length() >= maxChars) {
+          break;
+        }
+      }
+    }
+    if (kept.length() == 0) {
+      // 首句没标点或就超长：硬截 maxChars-1 字加省略号
+      return text.substring(0, maxChars - 1) + "…";
+    }
+    return kept.toString();
   }
 
   private String textValue(Object value) {
