@@ -17,6 +17,17 @@ public class Result<T> {
     return result;
   }
 
+  /**
+   * 新版契约（打卡 summary / 每日一卦 / 后台统计）：成功码 0
+   */
+  public static <T> Result<T> ok0(T data) {
+    Result<T> result = new Result<>();
+    result.code = 0;
+    result.message = "success";
+    result.data = data;
+    return result;
+  }
+
   public static <T> Result<T> error(String message) {
     Result<T> result = new Result<>();
     result.code = 500;

@@ -3,6 +3,7 @@ package com.starwhisper.server.service;
 import com.starwhisper.server.dto.MatchVO;
 import com.starwhisper.server.entity.Sign;
 import com.starwhisper.server.repository.SignRepository;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -80,14 +81,20 @@ public class MatchService {
 
   private final SignRepository signRepository;
   private final FortuneGenerator fortuneGenerator;
+  private final HoroscopeCacheService cacheService;
+  private final ObjectMapper objectMapper;
   private final RestClient restClient;
   private final String appKey;
 
   public MatchService(SignRepository signRepository,
                       FortuneGenerator fortuneGenerator,
+                      HoroscopeCacheService cacheService,
+                      ObjectMapper objectMapper,
                       @Value("${showapi.appKey:}") String appKey) {
     this.signRepository = signRepository;
     this.fortuneGenerator = fortuneGenerator;
+    this.cacheService = cacheService;
+    this.objectMapper = objectMapper;
     this.appKey = appKey;
 
     // 超时与运势接口一致：连接 5s / 读取 15s
@@ -116,10 +123,64 @@ public class MatchService {
   }
 
   /**
-   * 调 ShowAPI 872-2：表单提交 star1/star2（拼音）+ gender1/gender2（1男0女）
-   * 响应体 showapi_res_body 直接就是配对结果对象（不是数组），各字段全是字符串
+   * 调 ShowAPI 872-2（带当天缓存）：表单提交 star1/star2（拼音）+ gender1/gender2（1男0女）
+   * 响应体 showapi_res_body 直接就是配对结果对象（不是数组），各字段全是字符串。
+   * 缓存 key 含两个星座+性别+日期：match:aries:taurus:1:0:2026-10-09，
+   * 同一组合同一天只消耗一次外部配额
    */
   private MatchVO fetchFromShowapi(Sign star1, Sign star2, int gender1, int gender2) {
+    Map<String, Object> body = fetchBodyWithCache(star1, star2, gender1, gender2);
+
+    MatchVO vo = baseVO(star1, star2, "SHOWAPI");
+    MatchVO.Scores scores = new MatchVO.Scores();
+    // 线上实测：match 是 "90分" 带单位字符串，其余分项是 1-5 星值，
+    // 前端契约是 0-100，所以分项星值 ×20 归一（≤5 认为是星值，>5 认为已是百分制）
+    scores.setOverall(scoreValue(body.get("match")));            // 综合指数
+    scores.setLove(starScoreTo100(body.get("love")));            // 爱情
+    scores.setFriendship(starScoreTo100(body.get("friendship"))); // 友情
+    scores.setMarriage(starScoreTo100(body.get("married")));     // 婚姻
+    scores.setForever(starScoreTo100(body.get("forever")));      // 天长地久
+    scores.setLqxy(starScoreTo100(body.get("lqxy")));            // 两情相悦
+    scores.setAffection(starScoreTo100(body.get("affection")));  // 亲情
+    vo.setScores(scores);
+
+    vo.setProportion(textValue(body.get("proportion")));
+    vo.setSuggest(textValue(body.get("suggest")));
+    vo.setPredestination(textValue(body.get("predestination")));
+    vo.setMatchCase(textValue(body.get("match_case")));
+    vo.setAttention(textValue(body.get("attention")));
+    vo.setReview(textValue(body.get("review")));
+    return vo;
+  }
+
+  /**
+   * 取配对 body：先查当天缓存，未命中才调外部接口并写入缓存
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> fetchBodyWithCache(Sign star1, Sign star2, int gender1, int gender2) {
+    String key = "match:" + star1.getNameEn().toLowerCase() + ":" + star2.getNameEn().toLowerCase()
+        + ":" + gender1 + ":" + gender2 + ":" + LocalDate.now();
+    var cached = cacheService.getToday(key);
+    if (cached.isPresent()) {
+      try {
+        return objectMapper.readValue(cached.get(), Map.class);
+      } catch (Exception e) {
+        log.warn("配对缓存解析失败，重新调 ShowAPI：key={}, 原因={}", key, e.getMessage());
+      }
+    }
+    Map<String, Object> body = callApi(star1, star2, gender1, gender2);
+    try {
+      cacheService.put(key, objectMapper.writeValueAsString(body));
+    } catch (Exception e) {
+      log.warn("配对缓存序列化失败（不影响主流程）：key={}, 原因={}", key, e.getMessage());
+    }
+    return body;
+  }
+
+  /**
+   * 真实调 ShowAPI 872-2，返回校验过的 body 对象；任何异常抛给上层回退本地
+   */
+  private Map<String, Object> callApi(Sign star1, Sign star2, int gender1, int gender2) {
     MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
     form.add("star1", PINYIN.get(star1.getNameEn().toLowerCase()));
     form.add("star2", PINYIN.get(star2.getNameEn().toLowerCase()));
@@ -150,27 +211,7 @@ public class MatchService {
     if (!"0".equals(String.valueOf(body.get("ret_code")))) {
       throw new IllegalStateException("ShowAPI 业务返回失败，ret_code=" + body.get("ret_code"));
     }
-
-    MatchVO vo = baseVO(star1, star2, "SHOWAPI");
-    MatchVO.Scores scores = new MatchVO.Scores();
-    // 线上实测：match 是 "90分" 带单位字符串，其余分项是 1-5 星值，
-    // 前端契约是 0-100，所以分项星值 ×20 归一（≤5 认为是星值，>5 认为已是百分制）
-    scores.setOverall(scoreValue(body.get("match")));            // 综合指数
-    scores.setLove(starScoreTo100(body.get("love")));            // 爱情
-    scores.setFriendship(starScoreTo100(body.get("friendship"))); // 友情
-    scores.setMarriage(starScoreTo100(body.get("married")));     // 婚姻
-    scores.setForever(starScoreTo100(body.get("forever")));      // 天长地久
-    scores.setLqxy(starScoreTo100(body.get("lqxy")));            // 两情相悦
-    scores.setAffection(starScoreTo100(body.get("affection")));  // 亲情
-    vo.setScores(scores);
-
-    vo.setProportion(textValue(body.get("proportion")));
-    vo.setSuggest(textValue(body.get("suggest")));
-    vo.setPredestination(textValue(body.get("predestination")));
-    vo.setMatchCase(textValue(body.get("match_case")));
-    vo.setAttention(textValue(body.get("attention")));
-    vo.setReview(textValue(body.get("review")));
-    return vo;
+    return body;
   }
 
   /**

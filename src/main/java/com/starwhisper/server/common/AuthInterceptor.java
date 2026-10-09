@@ -29,8 +29,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     request.setAttribute(CurrentUser.ATTRIBUTE, user);
 
     // 只有 /api/user/** 和 /api/checkin/** 强制要求登录，其余接口游客可用
+    // 例外：/api/checkin/summary 走 openid 参数查询（v4 契约），不需要 token
     String uri = request.getRequestURI();
-    if (user == null && (uri.startsWith("/api/user/") || uri.startsWith("/api/checkin"))) {
+    boolean needLogin = uri.startsWith("/api/user/")
+        || (uri.startsWith("/api/checkin") && !uri.equals("/api/checkin/summary"));
+    if (user == null && needLogin) {
       response.setStatus(HttpServletResponse.SC_OK);
       response.setContentType("application/json;charset=UTF-8");
       response.getWriter().write("{\"code\":401,\"message\":\"请先登录\",\"data\":null}");

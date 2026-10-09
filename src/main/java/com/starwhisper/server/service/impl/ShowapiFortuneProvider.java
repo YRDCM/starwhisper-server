@@ -5,6 +5,8 @@ import com.starwhisper.server.entity.Sign;
 import com.starwhisper.server.repository.SignRepository;
 import com.starwhisper.server.service.FortuneGenerator;
 import com.starwhisper.server.service.FortuneProvider;
+import com.starwhisper.server.service.HoroscopeCacheService;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -63,16 +65,22 @@ public class ShowapiFortuneProvider implements FortuneProvider {
 
   private final SignRepository signRepository;
   private final FortuneGenerator fortuneGenerator;
+  private final HoroscopeCacheService cacheService;
+  private final ObjectMapper objectMapper;
   private final RestClient restClient;
   private final String appKey;
   private final boolean mock;
 
   public ShowapiFortuneProvider(SignRepository signRepository,
                                 FortuneGenerator fortuneGenerator,
+                                HoroscopeCacheService cacheService,
+                                ObjectMapper objectMapper,
                                 @Value("${showapi.appKey:}") String appKey,
                                 @Value("${showapi.mock:false}") boolean mock) {
     this.signRepository = signRepository;
     this.fortuneGenerator = fortuneGenerator;
+    this.cacheService = cacheService;
+    this.objectMapper = objectMapper;
     this.appKey = appKey;
     this.mock = mock;
 
@@ -92,8 +100,36 @@ public class ShowapiFortuneProvider implements FortuneProvider {
 
   @Override
   public FortuneDaily fetch(Sign sign, LocalDate date) {
-    Map<String, Object> day = mock ? mockDay(sign, date) : callApi(sign);
+    Map<String, Object> day = mock ? mockDay(sign, date) : fetchWithCache(sign, date);
     return mapToEntity(day, sign, date);
+  }
+
+  /**
+   * 真实数据入口（带缓存）：只对"今天"用缓存（缓存 key 里的日期就是当天，
+   * 历史日期 ShowAPI 也给不出，维持原行为直接调）
+   * key 形如 aries:today:2026-10-09 —— 同星座同一天只消耗一次外部配额
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> fetchWithCache(Sign sign, LocalDate date) {
+    if (!date.equals(LocalDate.now())) {
+      return callApi(sign);
+    }
+    String key = sign.getNameEn().toLowerCase() + ":today:" + date;
+    var cached = cacheService.getToday(key);
+    if (cached.isPresent()) {
+      try {
+        return objectMapper.readValue(cached.get(), Map.class);
+      } catch (Exception e) {
+        log.warn("运势缓存解析失败，重新调 ShowAPI：key={}, 原因={}", key, e.getMessage());
+      }
+    }
+    Map<String, Object> day = callApi(sign);
+    try {
+      cacheService.put(key, objectMapper.writeValueAsString(day));
+    } catch (Exception e) {
+      log.warn("运势缓存序列化失败（不影响主流程）：key={}, 原因={}", key, e.getMessage());
+    }
+    return day;
   }
 
   /**

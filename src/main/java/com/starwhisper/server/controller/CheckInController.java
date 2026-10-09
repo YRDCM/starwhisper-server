@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -48,6 +49,15 @@ public class CheckInController {
       return needLogin();
     }
     return Result.success(checkInService.status(user));
+  }
+
+  /**
+   * 打卡汇总（v4 契约）：GET /api/checkin/summary?openid=xxx
+   * 凭 openid 查询，不需要登录 token（拦截器已对这个路径放行）
+   */
+  @GetMapping("/summary")
+  public Result<Map<String, Object>> summary(@RequestParam(required = false) String openid) {
+    return Result.ok0(checkInService.summary(openid));
   }
 
   /**
