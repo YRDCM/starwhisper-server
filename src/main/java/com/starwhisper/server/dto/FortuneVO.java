@@ -68,8 +68,18 @@ public class FortuneVO {
     vo.luckyNumber = fortune.getLuckyNumber();
     vo.luckyTime = fortune.getLuckyTime();
     vo.summary = fortune.getSummary();
-    vo.doText = fortune.getDoText();
-    vo.dontText = fortune.getDontText();
+    // 宜/忌：ShowAPI 不提供，原本是本地文案池编的（伪），已按用户要求彻底移除——
+    // 字段保留在 VO 里占位（防前端解析报错），值恒为 null
+    vo.doText = null;
+    vo.dontText = null;
+
+    // LOCAL 兜底去伪：健康分和贵人星座在本地路径是随机编的，恒置 null
+    // （ShowAPI 路径的贵人是 grxz 真实字段，保留）
+    boolean isShowapi = "SHOWAPI".equals(fortune.getSource());
+    if (!isShowapi) {
+      vo.healthScore = null;
+      pairSign = null;
+    }
 
     if (pairSign != null) {
       vo.pairSignName = pairSign.getName();

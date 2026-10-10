@@ -241,9 +241,9 @@ public class ShowapiFortuneProvider implements FortuneProvider {
     fortune.setMoneyTxt(textValue(day.get("money_txt")));
     // healthTxt 暂无数据源，保持 null
 
-    // 宜忌：接口没有，用本地生成器的文案池补齐（确定性，重启不变）
-    fortune.setDoText(fortuneGenerator.generateDoText(sign.getId(), date));
-    fortune.setDontText(fortuneGenerator.generateDontText(sign.getId(), date));
+    // 宜/忌：ShowAPI 不提供，本地文案池属于编造内容，按用户要求彻底移除（恒 null）
+    fortune.setDoText(null);
+    fortune.setDontText(null);
 
     // 贵人星座（中文名）→ 速配星座 id，查不到就 null，不阻断主流程
     String grxz = textValue(day.get("grxz"));

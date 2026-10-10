@@ -82,23 +82,24 @@ public class FortuneGenerator {
     fortune.setLoveScore(2 + random.nextInt(4));
     fortune.setCareerScore(2 + random.nextInt(4));
     fortune.setWealthScore(2 + random.nextInt(4));
-    fortune.setHealthScore(2 + random.nextInt(4));
+    // 健康分：ShowAPI 没有健康数据，本地兜底也不编——假数据不该比真数据多一维
+    fortune.setHealthScore(null);
 
     fortune.setLuckyNumber(1 + random.nextInt(99));
     fortune.setLuckyColor(pickOne(COLOR_POOL, random));
     fortune.setLuckyTime(pickOne(TIME_POOL, random));
 
-    // 宜/忌各挑 3 条，洗牌后取前三个，保证不重复
-    fortune.setDoText(pickThree(DO_POOL, random));
-    fortune.setDontText(pickThree(DONT_POOL, random));
+    // 宜/忌：纯文案池编造内容，按用户要求彻底移除（恒 null）
+    fortune.setDoText(null);
+    fortune.setDontText(null);
 
     // 点评：按综合评分选档，再抽一条
     int overall = fortune.getOverallScore();
     String[] pool = overall >= 4 ? SUMMARY_HIGH : (overall == 3 ? SUMMARY_MID : SUMMARY_LOW);
     fortune.setSummary(pickOne(pool, random));
 
-    // 速配星座：从全部星座里挑一个不是自己
-    fortune.setPairSignId(pickPairSign(signId, allSignIds, random));
+    // 速配星座：随机挑的是编造内容，按用户要求移除（恒 null；SHOWAPI 路径用 grxz 真实字段）
+    fortune.setPairSignId(null);
 
     return fortune;
   }
