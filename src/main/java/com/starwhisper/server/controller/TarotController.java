@@ -9,6 +9,9 @@ import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.service.TarotService;
 import com.starwhisper.server.service.TarotSpread;
 import com.starwhisper.server.service.UserHistoryService;
+import com.starwhisper.server.service.TarotAiService;
+import com.starwhisper.server.service.KimiTarotClient;
+import org.springframework.web.bind.annotation.RequestBody;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,11 +32,13 @@ public class TarotController {
 
   private final TarotService tarotService;
   private final UserHistoryService userHistoryService;
+  private final TarotAiService ai;
 
   // 构造注入
-  public TarotController(TarotService tarotService, UserHistoryService userHistoryService) {
+  public TarotController(TarotService tarotService, UserHistoryService userHistoryService, TarotAiService ai) {
     this.tarotService = tarotService;
     this.userHistoryService = userHistoryService;
+    this.ai = ai;
   }
 
   /**
@@ -58,6 +63,7 @@ public class TarotController {
                                    @RequestParam(required = false) String cardNos,
                                    HttpServletRequest request) {
     DrawResultVO result = tarotService.draw(resolveSpread(spread, count), parseCardNos(cardNos));
+    result.setDrawId(ai.register(result));
 
     // 登录用户记历史；记录失败不影响抽牌（service 内部已兜底）
     AppUser user = CurrentUser.get(request);
@@ -85,6 +91,13 @@ public class TarotController {
       }
     }
     return nos;
+  }
+
+  public record AiRequest(String drawId, String question) {}
+
+  @PostMapping("/ai-reading")
+  public Result<KimiTarotClient.Reading> aiReading(@RequestBody AiRequest body, HttpServletRequest request) {
+    return Result.success(ai.read(body.drawId(), body.question(), request.getRemoteAddr()));
   }
 
   /**

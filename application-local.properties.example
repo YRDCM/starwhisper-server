@@ -7,3 +7,9 @@ showapi.appKey=在这里填你的ShowAPI-appKey
 # 微信小程序
 wechat.appid=在这里填小程序AppID
 wechat.secret=在这里填小程序AppSecret
+
+# Kimi（留空时关闭 AI 解牌，不影响普通抽牌；真实密钥不要提交）
+kimi.api-key=
+kimi.model=kimi-k2.6
+kimi.per-ip-daily-limit=3
+kimi.global-daily-limit=100

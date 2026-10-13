@@ -16,7 +16,7 @@ class TarotControllerTests {
   void rejectsMalformedSelectionBeforeDrawing(String selection) {
     TarotService tarot = mock(TarotService.class);
     UserHistoryService history = mock(UserHistoryService.class);
-    TarotController controller = new TarotController(tarot, history);
+    TarotController controller = new TarotController(tarot, history, mock(com.starwhisper.server.service.TarotAiService.class));
     assertThrows(IllegalArgumentException.class,
         () -> controller.draw("single", null, selection, null));
     verifyNoInteractions(tarot, history);

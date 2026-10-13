@@ -7,6 +7,9 @@ import java.util.List;
  * {spread:"three", spreadName:"时间之流", cards:[...]}
  */
 public class DrawResultVO {
+  private String drawId;
+  public String getDrawId() { return drawId; }
+  public void setDrawId(String drawId) { this.drawId = drawId; }
 
   private String spread;            // 牌阵 key：single/three/choice/love/celtic/hexagram
   private String spreadName;        // 牌阵中文名
