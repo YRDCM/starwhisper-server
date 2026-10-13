@@ -76,7 +76,7 @@ public class TarotController {
       return null;
     }
     List<Integer> nos = new ArrayList<>();
-    for (String part : cardNos.split(",")) {
+    for (String part : cardNos.split(",", -1)) {
       String token = part.trim();
       try {
         nos.add(Integer.valueOf(token));
