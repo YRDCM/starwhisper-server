@@ -8,6 +8,7 @@ import com.starwhisper.server.entity.TarotCard;
 public class TarotCardVO {
 
   private Long id;
+  private Integer no;          // 全牌局统一序号 1-78：MAJOR 0-21→1-22，WANDS→23-36，CUPS→37-50，SWORDS→51-64，PENTACLES→65-78
   private String name;           // 中文牌名
   private String nameEn;         // 英文牌名
   private String arcanaGroup;    // MAJOR / WANDS / CUPS / SWORDS / PENTACLES
@@ -20,6 +21,7 @@ public class TarotCardVO {
   public static TarotCardVO of(TarotCard card) {
     TarotCardVO vo = new TarotCardVO();
     vo.id = card.getId();
+    vo.no = deckNo(card.getArcanaGroup(), card.getCardNumber());
     vo.name = card.getName();
     vo.nameEn = card.getNameEn();
     vo.arcanaGroup = card.getArcanaGroup();
@@ -31,8 +33,27 @@ public class TarotCardVO {
     return vo;
   }
 
+  /**
+   * 牌组+组内编号 → 全局序号 1-78（与 TarotService 的 orderedDeck 顺序一致，
+   * 前端牌库/暗置选牌/抽牌结果三条线共用这套编号）
+   */
+  public static int deckNo(String arcanaGroup, Integer cardNumber) {
+    return switch (arcanaGroup) {
+      case "MAJOR" -> cardNumber + 1;        // 愚人0→1 … 世界21→22
+      case "WANDS" -> 22 + cardNumber;       // 23-36
+      case "CUPS" -> 36 + cardNumber;        // 37-50
+      case "SWORDS" -> 50 + cardNumber;      // 51-64
+      case "PENTACLES" -> 64 + cardNumber;   // 65-78
+      default -> throw new IllegalArgumentException("未知牌组：" + arcanaGroup);
+    };
+  }
+
   public Long getId() {
     return id;
+  }
+
+  public Integer getNo() {
+    return no;
   }
 
   public String getName() {

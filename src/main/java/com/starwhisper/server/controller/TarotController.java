@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -47,13 +48,16 @@ public class TarotController {
    * 抽牌：POST /api/tarot/draw
    * 新参数 spread=single/three/choice/love/celtic/hexagram；
    * 兼容老参数 count（1→single，3→three），都不传等同 single
+   * 可选参数 cardNos：逗号分隔的牌序号（1-78，用户暗置选牌），
+   * 数量必须等于牌阵张数；不传则保持纯随机（旧行为）
    * 登录用户会自动记一条占卜历史（游客抽牌不记）
    */
   @PostMapping("/draw")
   public Result<DrawResultVO> draw(@RequestParam(required = false) String spread,
                                    @RequestParam(required = false) Integer count,
+                                   @RequestParam(required = false) String cardNos,
                                    HttpServletRequest request) {
-    DrawResultVO result = tarotService.draw(resolveSpread(spread, count));
+    DrawResultVO result = tarotService.draw(resolveSpread(spread, count), parseCardNos(cardNos));
 
     // 登录用户记历史；记录失败不影响抽牌（service 内部已兜底）
     AppUser user = CurrentUser.get(request);
@@ -61,6 +65,26 @@ public class TarotController {
       userHistoryService.record(user, "TAROT", buildDrawTitle(result), result);
     }
     return Result.success(result);
+  }
+
+  /**
+   * 解析 cardNos：逗号分隔的 1-78 序号；没传返回 null（走随机）；
+   * 格式非法直接报清楚的错（数量/越界/重复在 service 层校验）
+   */
+  private List<Integer> parseCardNos(String cardNos) {
+    if (cardNos == null || cardNos.isBlank()) {
+      return null;
+    }
+    List<Integer> nos = new ArrayList<>();
+    for (String part : cardNos.split(",")) {
+      String token = part.trim();
+      try {
+        nos.add(Integer.valueOf(token));
+      } catch (NumberFormatException e) {
+        throw new IllegalArgumentException("cardNos 格式错误：「" + token + "」不是数字（应为逗号分隔的牌序号，如 1,22,37）");
+      }
+    }
+    return nos;
   }
 
   /**

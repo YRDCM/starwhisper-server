@@ -52,24 +52,65 @@ public class TarotService {
   }
 
   /**
-   * 按牌阵随机抽牌：
+   * 按牌阵随机抽牌（不传 cardNos 的旧行为，保持不变）：
    * 一次抽牌内不会有重复的牌，每张牌独立掷 50/50 决定正逆位，
    * 第 i 张牌放到牌阵的第 i 个牌位上
    */
   public DrawResultVO draw(TarotSpread spread) {
-    List<TarotCard> deck = new ArrayList<>(orderedDeck());
+    return draw(spread, null);
+  }
+
+  /**
+   * 抽牌（v5：支持用户自行选牌）
+   * cardNos 为 null → 整副洗牌后按顺序取（纯随机，兼容旧端）；
+   * cardNos 指定 → 按用户选定的序号取牌（校验数量/越界/重复），
+   * 无论哪条路径，正逆位都由后端 SecureRandom 掷定（保证记录一致性）
+   */
+  public DrawResultVO draw(TarotSpread spread, List<Integer> cardNos) {
+    List<TarotCard> deck = orderedDeck();
     // SecureRandom：抽牌是"占卜"场景，要的是不可预测的真随机
     SecureRandom secureRandom = new SecureRandom();
-    java.util.Collections.shuffle(deck, secureRandom);
+
+    List<TarotCard> picked;
+    if (cardNos == null) {
+      List<TarotCard> shuffled = new ArrayList<>(deck);
+      java.util.Collections.shuffle(shuffled, secureRandom);
+      picked = shuffled.subList(0, spread.getCount());
+    } else {
+      picked = pickUserCards(deck, spread, cardNos);
+    }
 
     String[] positions = spread.getPositions();
     String[] positionDescs = spread.getPositionDescs();
     List<DrawnCardVO> drawn = new ArrayList<>();
     for (int i = 0; i < spread.getCount(); i++) {
       boolean upright = secureRandom.nextBoolean();
-      drawn.add(DrawnCardVO.of(deck.get(i), upright, positions[i], positionDescs[i]));
+      drawn.add(DrawnCardVO.of(picked.get(i), upright, positions[i], positionDescs[i]));
     }
     return new DrawResultVO(spread.getKey(), spread.getName(), drawn);
+  }
+
+  /**
+   * 用户选牌校验 + 取牌：数量必须等于牌阵张数、序号 1-78、不允许重复
+   */
+  private List<TarotCard> pickUserCards(List<TarotCard> deck, TarotSpread spread, List<Integer> cardNos) {
+    if (cardNos.size() != spread.getCount()) {
+      throw new IllegalArgumentException(
+          "选牌数量不符：牌阵「" + spread.getName() + "」需要 " + spread.getCount()
+              + " 张，收到 " + cardNos.size() + " 张");
+    }
+    List<TarotCard> picked = new ArrayList<>();
+    for (Integer no : cardNos) {
+      if (no == null || no < 1 || no > deck.size()) {
+        throw new IllegalArgumentException("无效的牌序号：" + no + "（合法范围 1-" + deck.size() + "）");
+      }
+      picked.add(deck.get(no - 1)); // 序号 1 起始，列表 0 起始
+    }
+    long distinct = picked.stream().map(TarotCard::getId).distinct().count();
+    if (distinct != picked.size()) {
+      throw new IllegalArgumentException("选牌序号重复，每张牌只能选一次");
+    }
+    return picked;
   }
 
   /**
