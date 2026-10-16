@@ -4,6 +4,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -24,8 +25,12 @@ public class WechatSubscribeMessageClient {
 
   private final RestClient restClient;
   private final ObjectMapper objectMapper = new ObjectMapper();
+  // miniprogram_state：formal=正式版 / trial=体验版 / developer=开发版。
+  // 小程序未发布时 formal 会被微信 412 拒绝，联调期用 trial，发布后改回 formal
+  private final String miniprogramState;
 
-  public WechatSubscribeMessageClient() {
+  public WechatSubscribeMessageClient(@Value("${wx.notify.miniprogram-state:formal}") String miniprogramState) {
+    this.miniprogramState = miniprogramState;
     SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
     factory.setConnectTimeout(5000);
     factory.setReadTimeout(10000);
@@ -50,8 +55,7 @@ public class WechatSubscribeMessageClient {
       payload.put("page", page);
     }
     payload.put("data", data);
-    // miniprogram_state：正式版；上线前联调可改 trial
-    payload.put("miniprogram_state", "formal");
+    payload.put("miniprogram_state", miniprogramState);
     payload.put("lang", "zh_CN");
 
     String raw = restClient.post()
