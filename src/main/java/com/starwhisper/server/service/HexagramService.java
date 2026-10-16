@@ -51,6 +51,7 @@ public class HexagramService {
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("date", today.toString());
+    data.put("id", hexagram.getId()); // 卦序（文王卦序 1-64），前端 AI 解卦要拿它当 primarySeq
     data.put("name", hexagram.getName());
     data.put("symbol", hexagram.getSymbol());
     data.put("guaCi", hexagram.getGuaCi());
