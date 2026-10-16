@@ -53,10 +53,16 @@ public class CheckInController {
 
   /**
    * 打卡汇总（v4 契约）：GET /api/checkin/summary?openid=xxx
-   * 凭 openid 查询，不需要登录 token（拦截器已对这个路径放行）
+   * 已登录（带 token）优先按 token 身份查；否则按 openid 参数查（游客/旧契约保留）
+   * —— 前端曾把用户 id 当 openid 兜底传上来，导致查不到用户全显示 0
    */
   @GetMapping("/summary")
-  public Result<Map<String, Object>> summary(@RequestParam(required = false) String openid) {
+  public Result<Map<String, Object>> summary(@RequestParam(required = false) String openid,
+                                             HttpServletRequest request) {
+    AppUser user = CurrentUser.get(request);
+    if (user != null) {
+      return Result.ok0(checkInService.summaryByUserId(user.getId()));
+    }
     return Result.ok0(checkInService.summary(openid));
   }
 

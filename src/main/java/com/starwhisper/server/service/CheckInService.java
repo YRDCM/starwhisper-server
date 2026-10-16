@@ -88,16 +88,31 @@ public class CheckInService {
    * openid 查不到用户时返回全零数据（游客也能看勋章墙，不报错）
    */
   public Map<String, Object> summary(String openid) {
-    LocalDate today = LocalDate.now();
-
     Set<LocalDate> dates = Set.of();
     if (openid != null && !openid.isBlank()) {
       Optional<AppUser> user = appUserRepository.findByOpenid(openid.trim());
       if (user.isPresent()) {
-        dates = checkInRepository.findByUserIdOrderByCheckDateDesc(user.get().getId())
-            .stream().map(CheckIn::getCheckDate).collect(Collectors.toSet());
+        dates = datesOf(user.get().getId());
       }
     }
+    return buildSummary(dates);
+  }
+
+  /**
+   * 打卡汇总（已登录用户）：凭 token 解析出的用户 id 直接查，
+   * 不依赖前端传 openid（前端曾误把用户 id 当 openid 传，导致已登录用户看到全零）
+   */
+  public Map<String, Object> summaryByUserId(Long userId) {
+    return buildSummary(datesOf(userId));
+  }
+
+  private Set<LocalDate> datesOf(Long userId) {
+    return checkInRepository.findByUserIdOrderByCheckDateDesc(userId)
+        .stream().map(CheckIn::getCheckDate).collect(Collectors.toSet());
+  }
+
+  private Map<String, Object> buildSummary(Set<LocalDate> dates) {
+    LocalDate today = LocalDate.now();
 
     boolean todayChecked = dates.contains(today);
 
