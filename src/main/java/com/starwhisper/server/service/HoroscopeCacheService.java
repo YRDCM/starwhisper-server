@@ -42,6 +42,22 @@ public class HoroscopeCacheService {
   }
 
   /**
+   * 按 key 精确读取：不看写入日期。
+   * 给周运这类"key 本身带周期标识"（如 leo:week:2026-10-12）的缓存用——
+   * 跨周天然换 key，不存在过期串周问题，所以不需要 getToday 的当天校验
+   */
+  public Optional<String> getByKey(String cacheKey) {
+    try {
+      return repository.findByCacheKey(cacheKey)
+          .map(HoroscopeCache::getContent)
+          .filter(content -> content != null && !content.isBlank());
+    } catch (Exception e) {
+      log.warn("运势缓存读取失败（当作未命中）：key={}, 原因={}", cacheKey, e.getMessage());
+      return Optional.empty();
+    }
+  }
+
+  /**
    * 写缓存：同 key 覆盖（upsert），失败只记日志
    */
   public void put(String cacheKey, String content) {

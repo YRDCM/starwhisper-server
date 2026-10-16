@@ -28,10 +28,11 @@ public class AuthInterceptor implements HandlerInterceptor {
     AppUser user = authService.resolveToken(request.getHeader("Authorization"));
     request.setAttribute(CurrentUser.ATTRIBUTE, user);
 
-    // 只有 /api/user/** 和 /api/checkin/** 强制要求登录，其余接口游客可用
+    // 只有 /api/user/**、/api/checkin/**、/api/notify/** 强制要求登录，其余接口游客可用
     // 例外：/api/checkin/summary 走 openid 参数查询（v4 契约），不需要 token
     String uri = request.getRequestURI();
     boolean needLogin = uri.startsWith("/api/user/")
+        || uri.startsWith("/api/notify/")
         || (uri.startsWith("/api/checkin") && !uri.equals("/api/checkin/summary"));
     if (user == null && needLogin) {
       response.setStatus(HttpServletResponse.SC_OK);

@@ -2,6 +2,7 @@ package com.starwhisper.server.controller;
 
 import com.starwhisper.server.common.Result;
 import com.starwhisper.server.dto.FortuneVO;
+import com.starwhisper.server.dto.WeeklyFortuneVO;
 import com.starwhisper.server.service.FortuneService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,6 +52,15 @@ public class FortuneController {
   @GetMapping("/week")
   public Result<List<FortuneVO>> week(@RequestParam String sign) {
     return Result.success(fortuneService.getWeek(sign));
+  }
+
+  /**
+   * 本周运势（ShowAPI week 节点）：GET /api/fortune/weekly?sign=leo
+   * 失败直接返回错误（code 500），前端显示错误态 —— 周运无本地兜底
+   */
+  @GetMapping("/weekly")
+  public Result<WeeklyFortuneVO> weekly(@RequestParam String sign) {
+    return Result.success(fortuneService.getWeeklyFortune(sign));
   }
 
   /**

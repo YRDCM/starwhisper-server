@@ -30,6 +30,9 @@ public class AppUser {
   @Column(length = 512)
   private String avatarUrl;     // 头像，可空
 
+  @Column(length = 16)
+  private String signNameEn;    // 用户星座英文名（如 aries），可空；订阅每日运势推送时按它取运势
+
   private LocalDateTime createdAt;
   private LocalDateTime lastLoginAt;
 
@@ -66,6 +69,14 @@ public class AppUser {
 
   public void setAvatarUrl(String avatarUrl) {
     this.avatarUrl = avatarUrl;
+  }
+
+  public String getSignNameEn() {
+    return signNameEn;
+  }
+
+  public void setSignNameEn(String signNameEn) {
+    this.signNameEn = signNameEn;
   }
 
   public LocalDateTime getCreatedAt() {

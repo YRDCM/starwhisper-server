@@ -1,5 +1,6 @@
 package com.starwhisper.server.service.impl;
 
+import com.starwhisper.server.dto.WeeklyFortuneVO;
 import com.starwhisper.server.entity.FortuneDaily;
 import com.starwhisper.server.entity.Sign;
 import com.starwhisper.server.repository.SignRepository;
@@ -19,7 +20,9 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +60,8 @@ public class ShowapiFortuneProvider implements FortuneProvider {
   private static final String[] DIRECTIONS = {"正东", "东南", "正南", "西南", "正西", "西北", "正北", "东北"};
   private static final String[] MOCK_COLORS = {"樱花粉", "天空蓝", "奶白色", "葡萄紫", "柠檬黄", "墨绿色", "香槟金"};
   private static final String[] MOCK_TIMES = {"07:00-09:00", "09:00-11:00", "13:00-15:00", "15:00-17:00", "19:00-21:00"};
+  private static final String[] WEEK_DAYS = {"星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"};
+  private static final DateTimeFormatter RANGE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
   // 接口响应统一按 Map 解析，避免依赖具体 JSON 库的类型
   private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
@@ -138,6 +143,27 @@ public class ShowapiFortuneProvider implements FortuneProvider {
    */
   @SuppressWarnings("unchecked")
   private Map<String, Object> callApi(Sign sign) {
+    Map<String, Object> body = callApiBody(sign, false);
+    Object dayObj = body.get("day");
+    // 注意：OpenAPI 文档说 day 是数组，但线上实测返回的是单个对象（文档与实际不符）。
+    // 两种形态都兼容：是 Map 就直接用，是 List 就取第一个元素
+    Map<String, Object> day;
+    if (dayObj instanceof Map) {
+      day = (Map<String, Object>) dayObj;
+    } else if (dayObj instanceof List && !((List<?>) dayObj).isEmpty()) {
+      day = (Map<String, Object>) ((List<?>) dayObj).get(0);
+    } else {
+      throw new IllegalStateException("ShowAPI 响应里没有 day 数据");
+    }
+    return day;
+  }
+
+  /**
+   * ShowAPI 信封拆解：外层 showapi_res_code == 0、内层 ret_code == "0" 才返回 body。
+   * needWeek=true 时带表单参数 needWeek=1，响应 body 里会多一个 week 对象
+   * （不带就没有这个键，不是空对象 —— 2026-10 实测）
+   */
+  private Map<String, Object> callApiBody(Sign sign, boolean needWeek) {
     String pinyin = PINYIN.get(sign.getNameEn().toLowerCase());
     if (pinyin == null) {
       throw new IllegalStateException("没有该星座的拼音映射：" + sign.getNameEn());
@@ -146,6 +172,9 @@ public class ShowapiFortuneProvider implements FortuneProvider {
     MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
     form.add("star", pinyin);
     form.add("appKey", appKey);
+    if (needWeek) {
+      form.add("needWeek", "1");
+    }
 
     Map<String, Object> root = restClient.post()
         .uri(API_URL)
@@ -168,18 +197,7 @@ public class ShowapiFortuneProvider implements FortuneProvider {
     if (!"0".equals(String.valueOf(body.get("ret_code")))) {
       throw new IllegalStateException("ShowAPI 业务返回失败，ret_code=" + body.get("ret_code"));
     }
-    Object dayObj = body.get("day");
-    // 注意：OpenAPI 文档说 day 是数组，但线上实测返回的是单个对象（文档与实际不符）。
-    // 两种形态都兼容：是 Map 就直接用，是 List 就取第一个元素
-    Map<String, Object> day;
-    if (dayObj instanceof Map) {
-      day = (Map<String, Object>) dayObj;
-    } else if (dayObj instanceof List && !((List<?>) dayObj).isEmpty()) {
-      day = (Map<String, Object>) ((List<?>) dayObj).get(0);
-    } else {
-      throw new IllegalStateException("ShowAPI 响应里没有 day 数据");
-    }
-    return day;
+    return body;
   }
 
   /**
@@ -209,6 +227,157 @@ public class ShowapiFortuneProvider implements FortuneProvider {
     node.put("love_txt", "【模拟数据】感情方面多主动一点，单身者有望遇到聊得来的人。");
     node.put("work_txt", "【模拟数据】工作上适合处理积压任务，效率比预期高。");
     node.put("money_txt", "【模拟数据】财运一般，大额支出建议再观望两天。");
+    return node;
+  }
+
+  /* ==================== 本周运势（week 节点） ==================== */
+
+  /**
+   * 本周运势入口。
+   * 与日运的关键差异：周运没有本地生成器兜底 —— 失败直接抛异常，
+   * 宁可让前端显示错误态，也不编造文案冒充真实周运
+   */
+  public WeeklyFortuneVO fetchWeekly(Sign sign) {
+    LocalDate monday = LocalDate.now().with(DayOfWeek.MONDAY);
+    Map<String, Object> week = mock ? mockWeek(sign, monday) : fetchWeekWithCache(sign, monday);
+    return mapToWeeklyVO(week, sign);
+  }
+
+  /**
+   * 周运缓存 key：leo:week:2026-10-12（ISO 周的周一）。
+   * 同星座一周只消耗一次外部配额；跨周天然换 key，不存在串周问题
+   */
+  public static String weekCacheKey(String signNameEn, LocalDate date) {
+    LocalDate monday = date.with(DayOfWeek.MONDAY);
+    return signNameEn.toLowerCase() + ":week:" + monday;
+  }
+
+  /**
+   * 真实取数（带缓存）：命中直接解析；未命中调 ShowAPI（needWeek=1）并写缓存。
+   * 缓存读写任何异常都只记日志降级为直调，不阻断主流程
+   */
+  @SuppressWarnings("unchecked")
+  private Map<String, Object> fetchWeekWithCache(Sign sign, LocalDate monday) {
+    String key = weekCacheKey(sign.getNameEn(), monday);
+    var cached = cacheService.getByKey(key);
+    if (cached.isPresent()) {
+      try {
+        return objectMapper.readValue(cached.get(), Map.class);
+      } catch (Exception e) {
+        log.warn("周运缓存解析失败，重新调 ShowAPI：key={}, 原因={}", key, e.getMessage());
+      }
+    }
+    Map<String, Object> week = extractWeek(callApiBody(sign, true));
+    try {
+      cacheService.put(key, objectMapper.writeValueAsString(week));
+    } catch (Exception e) {
+      log.warn("周运缓存序列化失败（不影响主流程）：key={}, 原因={}", key, e.getMessage());
+    }
+    return week;
+  }
+
+  /**
+   * 从 body 里拆 week 节点：不带 needWeek=1 时上游不给这个键，
+   * 是 Map 直接用，是 List 取第一个（与日运同款防御），都没有就抛异常
+   */
+  @SuppressWarnings("unchecked")
+  public static Map<String, Object> extractWeek(Map<String, Object> body) {
+    Object weekObj = body.get("week");
+    if (weekObj instanceof Map) {
+      return (Map<String, Object>) weekObj;
+    }
+    if (weekObj instanceof List && !((List<?>) weekObj).isEmpty()) {
+      return (Map<String, Object>) ((List<?>) weekObj).get(0);
+    }
+    throw new IllegalStateException("ShowAPI 响应里没有 week 数据");
+  }
+
+  /**
+   * week 节点 → VO。评分防御性解析（上游数字/字符串都出现过），
+   * 文案字段缺失就留 null（2026-10 实测四段文案都在，但不做硬假设）
+   */
+  public WeeklyFortuneVO mapToWeeklyVO(Map<String, Object> week, Sign sign) {
+    WeeklyFortuneVO vo = new WeeklyFortuneVO();
+    vo.setSignId(sign.getId());
+    vo.setSignName(sign.getName());
+    vo.setSignNameEn(sign.getNameEn());
+    vo.setSignEmoji(sign.getEmoji());
+
+    vo.setOverallScore(scoreValue(week.get("summary_star")));
+    vo.setLoveScore(scoreValue(week.get("love_star")));
+    vo.setCareerScore(scoreValue(week.get("work_star")));
+    vo.setWealthScore(scoreValue(week.get("money_star")));
+
+    vo.setGeneralTxt(textValue(week.get("general_txt")));
+    vo.setLoveTxt(textValue(week.get("love_txt")));
+    vo.setWorkTxt(textValue(week.get("work_txt")));
+    vo.setMoneyTxt(textValue(week.get("money_txt")));
+
+    vo.setWeekNotice(textValue(week.get("week_notice")));
+    vo.setLuckyColor(textValue(week.get("lucky_color")));
+    vo.setLuckyNumber(parseWeekLuckyNumber(textValue(week.get("lucky_num"))));
+    vo.setLuckyDay(textValue(week.get("lucky_day")));
+    vo.setPairSignName(textValue(week.get("grxz")));
+    vo.setNemesisSignName(textValue(week.get("xrxz")));
+    vo.setTimeRange(textValue(week.get("time")));
+
+    vo.setSource("SHOWAPI");
+    return vo;
+  }
+
+  /**
+   * 周运幸运数字：上游是字符串（如 "71"），解析不出就 null ——
+   * 不像日运兜底成 7，周运宁缺毋假
+   */
+  private Integer parseWeekLuckyNumber(String luckyNum) {
+    if (luckyNum == null) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(luckyNum.trim());
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /**
+   * 模拟模式周运：与 mockDay 同款确定性种子（盐值 200，与日运流互不干扰），
+   * 所有文案带"【模拟数据】"前缀，绝不冒充真实数据
+   */
+  private Map<String, Object> mockWeek(Sign sign, LocalDate monday) {
+    Random random = fortuneGenerator.newSeededRandom(sign.getId(), monday, 200);
+
+    // 贵人/小人：确定性挑两个既不是自己、也互不相同的星座（12 星座，必然挑得出）
+    List<Sign> signs = signRepository.findAllByOrderByIdAsc();
+    int size = signs.size();
+    int index = (int) (sign.getId() % size);
+    int pairIdx = (index + 1 + random.nextInt(size - 1)) % size;
+    int nemesisIdx = (index + 1 + random.nextInt(size - 1)) % size;
+    if (nemesisIdx == pairIdx) {
+      nemesisIdx = (pairIdx + 1) % size;
+      if (nemesisIdx == index) {
+        nemesisIdx = (nemesisIdx + 1) % size;
+      }
+    }
+    Sign pair = signs.get(pairIdx);
+    Sign nemesis = signs.get(nemesisIdx);
+
+    Map<String, Object> node = new HashMap<>();
+    node.put("summary_star", 2 + random.nextInt(4));
+    node.put("love_star", 2 + random.nextInt(4));
+    node.put("money_star", 2 + random.nextInt(4));
+    node.put("work_star", 2 + random.nextInt(4));
+    node.put("grxz", pair.getName());
+    node.put("xrxz", nemesis.getName());
+    node.put("lucky_num", String.valueOf(1 + random.nextInt(99)));
+    node.put("lucky_day", WEEK_DAYS[random.nextInt(WEEK_DAYS.length)]);
+    node.put("lucky_color", MOCK_COLORS[random.nextInt(MOCK_COLORS.length)]);
+    node.put("time", monday.format(RANGE_FMT) + "-" + monday.plusDays(6).format(RANGE_FMT));
+    node.put("week_notice", "【模拟数据】" + sign.getName() + "本周提醒：节奏宜缓不宜急，重要决定放到周中之后。");
+    node.put("general_txt", "【模拟数据】" + sign.getName() + "本周整体运势稳中有升，周初适合规划，周末适合复盘。");
+    node.put("love_txt", "【模拟数据】感情方面，有伴者适合安排一次深度沟通，单身者桃花藏在老友圈里。");
+    node.put("work_txt", "【模拟数据】事业上本周贵人运不错，主动汇报进展会有意外收获。");
+    node.put("money_txt", "【模拟数据】财运平稳，周中可能有一笔计划外支出，提前留出余量即可。");
     return node;
   }
 

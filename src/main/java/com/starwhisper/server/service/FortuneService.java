@@ -1,6 +1,7 @@
 package com.starwhisper.server.service;
 
 import com.starwhisper.server.dto.FortuneVO;
+import com.starwhisper.server.dto.WeeklyFortuneVO;
 import com.starwhisper.server.entity.FortuneDaily;
 import com.starwhisper.server.entity.Sign;
 import com.starwhisper.server.repository.FortuneDailyRepository;
@@ -69,6 +70,20 @@ public class FortuneService {
       week.add(toVO(getOrFetch(sign, date), sign));
     }
     return week;
+  }
+
+  /**
+   * 本周运势：GET /api/fortune/weekly 的业务层。
+   * 与日运不同，周运没有本地生成器兜底（本地池编不出真实的一周文案）——
+   * 数据源未启用或调用失败都直接抛异常，由全局异常处理器返回错误，
+   * 前端显示"周运暂时不可用"的错误态，绝不拿编造内容冒充
+   */
+  public WeeklyFortuneVO getWeeklyFortune(String signQuery) {
+    Sign sign = resolveSign(signQuery);
+    if (!showapiFortuneProvider.isActive()) {
+      throw new IllegalStateException("本周运势数据源未配置，暂时不可用");
+    }
+    return showapiFortuneProvider.fetchWeekly(sign);
   }
 
   /**
