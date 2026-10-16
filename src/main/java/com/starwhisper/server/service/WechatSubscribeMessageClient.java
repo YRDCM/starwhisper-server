@@ -5,6 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -58,11 +59,21 @@ public class WechatSubscribeMessageClient {
     payload.put("miniprogram_state", miniprogramState);
     payload.put("lang", "zh_CN");
 
-    String raw = restClient.post()
-        .uri("https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=" + accessToken)
-        .body(payload)
-        .retrieve()
-        .body(String.class);
+    String raw;
+    try {
+      // 手动序列化成 JSON 字符串再发：手写 RestClient 不一定注册 Jackson3(tools.jackson) 转换器，
+      // 直接传 Map 可能发出非 JSON 报文被微信网关 412 拒收（2026-10-16 实测踩坑）
+      String json = objectMapper.writeValueAsString(payload);
+      raw = restClient.post()
+          .uri("https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=" + accessToken)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(json)
+          .retrieve()
+          .body(String.class);
+    } catch (Exception e) {
+      log.warn("订阅消息发送请求异常：openid={}, 原因={}", openid, e.getMessage());
+      return false;
+    }
 
     Map<String, Object> response;
     try {
