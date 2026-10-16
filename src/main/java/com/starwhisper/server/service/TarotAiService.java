@@ -1,7 +1,7 @@
 package com.starwhisper.server.service;
 
 import com.starwhisper.server.dto.DrawResultVO;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.*;
 import java.util.*;
@@ -10,12 +10,8 @@ import java.util.*;
 @Service
 public class TarotAiService {
   private final KimiTarotClient client;
-  private final int perIpLimit;
-  private final int globalLimit;
+  private final AiDailyQuota quota;
   private final Map<String, Session> sessions = new LinkedHashMap<>();
-  private final Map<String, Integer> attempts = new HashMap<>();
-  private LocalDate quotaDay = today();
-  private int total;
   private int active;
   private static final long TTL = Duration.ofHours(2).toMillis();
   private static class Session {
@@ -27,14 +23,16 @@ public class TarotAiService {
     Session(DrawResultVO draw) { this.draw = draw; }
   }
 
-  public TarotAiService(KimiTarotClient client, @Value("${kimi.per-ip-daily-limit:3}") int perIpLimit,
-                        @Value("${kimi.global-daily-limit:100}") int globalLimit) {
+  @Autowired
+  public TarotAiService(KimiTarotClient client, AiDailyQuota quota) {
     this.client = client;
-    this.perIpLimit = Math.max(0, perIpLimit);
-    this.globalLimit = Math.max(0, globalLimit);
+    this.quota = quota;
   }
 
-  private static LocalDate today() { return LocalDate.now(ZoneId.of("Asia/Shanghai")); }
+  // 测试用便捷构造：自建独立额度池
+  public TarotAiService(KimiTarotClient client, int perIpLimit, int globalLimit) {
+    this(client, new AiDailyQuota(perIpLimit, globalLimit));
+  }
 
   public synchronized String register(DrawResultVO draw) {
     if (!client.enabled()) return null;
@@ -63,12 +61,8 @@ public class TarotAiService {
         return session.reading;
       }
       if (session.running) throw new IllegalStateException("这组牌正在解读，请稍候再查看");
-      if (!today().equals(quotaDay)) { quotaDay = today(); total = 0; attempts.clear(); }
-      if (total >= globalLimit) throw new IllegalStateException("今日 AI 解读名额已用完，明天再来看看");
-      if (attempts.getOrDefault(ip, 0) >= perIpLimit) throw new IllegalStateException("当前网络今日 AI 解读次数已用完，明天再来看看");
       if (active >= 2) throw new IllegalStateException("AI 正在忙，请稍后再试");
-      total++;
-      attempts.merge(ip, 1, Integer::sum);
+      quota.consume(ip);
       active++;
       session.running = true;
       session.question = question.strip();

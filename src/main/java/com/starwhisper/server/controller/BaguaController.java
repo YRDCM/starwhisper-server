@@ -6,10 +6,13 @@ import com.starwhisper.server.dto.CastVO;
 import com.starwhisper.server.dto.HexagramVO;
 import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.service.BaguaService;
+import com.starwhisper.server.service.HexagramAiService;
+import com.starwhisper.server.service.KimiTarotClient;
 import com.starwhisper.server.service.UserHistoryService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,11 +28,13 @@ public class BaguaController {
 
   private final BaguaService baguaService;
   private final UserHistoryService userHistoryService;
+  private final HexagramAiService hexagramAi;
 
   // 构造注入
-  public BaguaController(BaguaService baguaService, UserHistoryService userHistoryService) {
+  public BaguaController(BaguaService baguaService, UserHistoryService userHistoryService, HexagramAiService hexagramAi) {
     this.baguaService = baguaService;
     this.userHistoryService = userHistoryService;
+    this.hexagramAi = hexagramAi;
   }
 
   /**
@@ -63,6 +68,22 @@ public class BaguaController {
   @GetMapping("/daily")
   public Result<HexagramVO> daily(@RequestParam(required = false) String sign) {
     return Result.success(baguaService.daily(sign));
+  }
+
+  /**
+   * AI 解卦请求：卦面身份（本卦卦序 + 可选之卦卦序 + 变爻位置）+ 可选用户问题。
+   * 卦辞爻义由后端从卦库取出组装，前端传的卦序只作定位，不接受自由文本卦辞。
+   */
+  public record AiRequest(Integer primarySeq, Integer changedSeq, List<Integer> changingLines, String question) {}
+
+  /**
+   * Kimi AI 解卦：POST /api/bagua/ai-reading
+   * 限额与塔罗解牌共用（每 IP 3 次/天 + 全站 100 次/天），响应结构同为 { summary, detail }
+   */
+  @PostMapping("/ai-reading")
+  public Result<KimiTarotClient.Reading> aiReading(@RequestBody AiRequest body, HttpServletRequest request) {
+    return Result.success(hexagramAi.read(body.primarySeq(), body.changedSeq(), body.changingLines(),
+        body.question(), request.getRemoteAddr()));
   }
 
   /**
