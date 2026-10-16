@@ -134,18 +134,23 @@ public class DailyFortuneNotifyJob {
   }
 
   /**
-   * 组装模板字段。
-   * ⚠️ key 必须与公众平台申请的模板字段一致（thing/phrase/number 等类型还有长度限制：
-   * thing 不超过 20 字符，number 只能数字）。运营申请到模板后，按模板实际字段名调整这里。
+   * 组装模板字段（模板 71514「今日运势提醒」，2026-10-16 公众平台详情页核对）：
+   *   运势关键词 → thing1（≤20 字符，如"综合4星 爱情4星 金色"）
+   *   运势简述   → thing2（≤20 字符，运势摘要截断）
+   *   日期       → time3（time 类型，"2026年10月16日" 格式）
    */
   static Map<String, Object> buildTemplateData(FortuneVO fortune) {
     Map<String, Object> data = new LinkedHashMap<>();
-    String signLabel = (fortune.getSignEmoji() == null ? "" : fortune.getSignEmoji() + " ")
-        + fortune.getSignName();
-    data.put("thing1", Map.of("value", truncate(signLabel + " 今日运势", 20)));
-    data.put("phrase2", Map.of("value", fortune.getFortuneDate() == null ? "" : fortune.getFortuneDate().toString()));
+    // 运势关键词：分数 + 幸运色拼成一行短词，超长自动截断
+    StringBuilder keyword = new StringBuilder();
+    if (fortune.getOverallScore() != null) keyword.append("综合").append(fortune.getOverallScore()).append("星");
+    if (fortune.getLoveScore() != null) keyword.append(" 爱情").append(fortune.getLoveScore()).append("星");
+    if (fortune.getLuckyColor() != null) keyword.append(" ").append(fortune.getLuckyColor());
+    data.put("thing1", Map.of("value", truncate(keyword.length() == 0 ? "查看今日运势" : keyword.toString(), 20)));
     String summary = fortune.getSummary() == null ? "查看今日运势详情" : fortune.getSummary();
-    data.put("thing3", Map.of("value", truncate(summary, 20)));
+    data.put("thing2", Map.of("value", truncate(summary, 20)));
+    LocalDate date = fortune.getFortuneDate() == null ? LocalDate.now() : fortune.getFortuneDate();
+    data.put("time3", Map.of("value", date.getYear() + "年" + date.getMonthValue() + "月" + date.getDayOfMonth() + "日"));
     return data;
   }
 

@@ -135,18 +135,20 @@ class DailyFortuneNotifyJobTests {
   }
 
   @Test
-  void 模板字段有thing类型20字符截断保护() {
+  void 模板字段与71514模板一致且thing类型有20字符截断保护() {
     FortuneVO fortune = mock(FortuneVO.class);
-    when(fortune.getSignEmoji()).thenReturn("♈");
-    when(fortune.getSignName()).thenReturn("白羊座");
+    when(fortune.getOverallScore()).thenReturn(4);
+    when(fortune.getLoveScore()).thenReturn(5);
+    when(fortune.getLuckyColor()).thenReturn("金色");
     when(fortune.getFortuneDate()).thenReturn(LocalDate.of(2026, 4, 9));
     when(fortune.getSummary()).thenReturn("这是一段非常非常非常非常非常非常非常非常长的运势摘要");
 
     Map<String, Object> data = DailyFortuneNotifyJob.buildTemplateData(fortune);
 
-    assertEquals(Map.of("value", "♈ 白羊座 今日运势"), data.get("thing1"));
-    assertEquals(Map.of("value", "2026-04-09"), data.get("phrase2"));
-    String thing3 = (String) ((Map<?, ?>) data.get("thing3")).get("value");
-    assertTrue(thing3.length() <= 20, "thing 类型字段不能超过 20 字符");
+    // 模板 71514：运势关键词 thing1 / 运势简述 thing2 / 日期 time3
+    assertEquals(Map.of("value", "综合4星 爱情5星 金色"), data.get("thing1"));
+    String thing2 = (String) ((Map<?, ?>) data.get("thing2")).get("value");
+    assertTrue(thing2.length() <= 20, "thing 类型字段不能超过 20 字符");
+    assertEquals(Map.of("value", "2026年4月9日"), data.get("time3"));
   }
 }
