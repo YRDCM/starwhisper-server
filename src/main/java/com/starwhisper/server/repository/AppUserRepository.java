@@ -1,6 +1,8 @@
 package com.starwhisper.server.repository;
 
 import com.starwhisper.server.entity.AppUser;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
@@ -19,4 +21,7 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
   long countByCreatedAtGreaterThanEqual(LocalDateTime since);
 
   List<AppUser> findByCreatedAtGreaterThanEqual(LocalDateTime since);
+
+  // 后台用户管理：昵称模糊分页（大小写不敏感）
+  Page<AppUser> findByNicknameContainingIgnoreCase(String nickname, Pageable pageable);
 }

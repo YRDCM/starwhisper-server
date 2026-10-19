@@ -28,4 +28,10 @@ public interface CheckInRepository extends JpaRepository<CheckIn, Long> {
   // 统计：某天打卡的用户 id 列表（后台今日活跃口径之一）
   @Query("select c.userId from CheckIn c where c.checkDate = :date")
   List<Long> findUserIdsByCheckDate(@Param("date") LocalDate date);
+
+  // 后台统计：某日期之后（含）的全部打卡记录（近 7 天每日活跃按天分桶用）
+  List<CheckIn> findByCheckDateGreaterThanEqual(LocalDate date);
+
+  // 后台用户管理：一批用户的全部打卡记录（日期新的在前），内存里算连续/累计
+  List<CheckIn> findByUserIdInOrderByCheckDateDesc(List<Long> userIds);
 }

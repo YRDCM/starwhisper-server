@@ -19,4 +19,7 @@ public interface SubscribeRecordRepository extends JpaRepository<SubscribeRecord
 
   // 某场景指定状态的全部订阅（推送任务用：查 ACTIVE）
   List<SubscribeRecord> findBySceneAndStatus(String scene, String status);
+
+  // 后台统计：指定状态的订阅数量（subscribeActive 指标）
+  long countByStatus(String status);
 }

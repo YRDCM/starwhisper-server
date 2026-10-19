@@ -32,4 +32,10 @@ public interface UserHistoryRepository extends JpaRepository<UserHistory, Long> 
   // 后台统计：某时刻之后产生过历史的去重用户（今日活跃口径之一）
   @Query("select distinct h.userId from UserHistory h where h.createdAt >= :since")
   List<Long> findDistinctUserIdsSince(@Param("since") LocalDateTime since);
+
+  // 后台统计：某时刻之后的全部历史（近 7 天每日活跃按天分桶用）
+  List<UserHistory> findByCreatedAtGreaterThanEqual(LocalDateTime since);
+
+  // 后台用户详情：最近 20 条历史，最新在前
+  List<UserHistory> findTop20ByUserIdOrderByCreatedAtDesc(Long userId);
 }

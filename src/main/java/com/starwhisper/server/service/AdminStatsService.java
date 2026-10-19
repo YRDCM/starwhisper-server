@@ -1,7 +1,10 @@
 package com.starwhisper.server.service;
 
+import com.starwhisper.server.entity.CheckIn;
+import com.starwhisper.server.entity.SubscribeRecord;
 import com.starwhisper.server.repository.AppUserRepository;
 import com.starwhisper.server.repository.CheckInRepository;
+import com.starwhisper.server.repository.SubscribeRecordRepository;
 import com.starwhisper.server.repository.UserHistoryRepository;
 import com.starwhisper.server.repository.UserSessionRepository;
 import org.slf4j.Logger;
@@ -32,17 +35,23 @@ public class AdminStatsService {
   private final CheckInRepository checkInRepository;
   private final UserHistoryRepository userHistoryRepository;
   private final UserSessionRepository userSessionRepository;
+  private final SubscribeRecordRepository subscribeRecordRepository;
+  private final AiDailyQuota aiDailyQuota;
   private final ObjectMapper objectMapper;
 
   public AdminStatsService(AppUserRepository appUserRepository,
                            CheckInRepository checkInRepository,
                            UserHistoryRepository userHistoryRepository,
                            UserSessionRepository userSessionRepository,
+                           SubscribeRecordRepository subscribeRecordRepository,
+                           AiDailyQuota aiDailyQuota,
                            ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
     this.checkInRepository = checkInRepository;
     this.userHistoryRepository = userHistoryRepository;
     this.userSessionRepository = userSessionRepository;
+    this.subscribeRecordRepository = subscribeRecordRepository;
+    this.aiDailyQuota = aiDailyQuota;
     this.objectMapper = objectMapper;
   }
 
@@ -68,9 +77,43 @@ public class AdminStatsService {
     data.put("checkinTotal", checkInRepository.count());
     data.put("todayCheckins", checkInRepository.countByCheckDate(today));
     data.put("tarotTotal", userHistoryRepository.countByType("TAROT"));
+    data.put("baguaTotal", userHistoryRepository.countByType("BAGUA"));
+    data.put("matchTotal", userHistoryRepository.countByType("MATCH"));
     data.put("spreadDist", spreadDist());
     data.put("dailyNewUsers", dailyNewUsers(weekAgo));
+    data.put("dailyActive", dailyActive(today));
+    // AI 限额：来自 AiDailyQuota 的运行时状态（限额值跟随 app_config 动态配置）
+    data.put("aiTodayUsed", aiDailyQuota.todayUsed());
+    data.put("aiGlobalLimit", aiDailyQuota.globalLimit());
+    data.put("aiGlobalRemaining", aiDailyQuota.globalRemaining());
+    data.put("subscribeActive", subscribeRecordRepository.countByStatus(SubscribeRecord.STATUS_ACTIVE));
     return data;
+  }
+
+  /**
+   * 近 7 天每日活跃（含今天，日期升序，没人的日子补 0）
+   * 口径与 todayActive 一致：当天登录（新建会话）+ 打卡 + 产生占卜历史的去重用户数
+   */
+  private List<Map<String, Object>> dailyActive(LocalDate today) {
+    Map<LocalDate, Set<Long>> buckets = new TreeMap<>();
+    for (int i = 6; i >= 0; i--) {
+      buckets.put(today.minusDays(i), new HashSet<>());
+    }
+    LocalDateTime weekAgo = today.minusDays(6).atStartOfDay();
+    userSessionRepository.findByCreatedAtGreaterThanEqual(weekAgo)
+        .forEach(s -> buckets.computeIfAbsent(s.getCreatedAt().toLocalDate(), d -> new HashSet<>()).add(s.getUserId()));
+    userHistoryRepository.findByCreatedAtGreaterThanEqual(weekAgo)
+        .forEach(h -> buckets.computeIfAbsent(h.getCreatedAt().toLocalDate(), d -> new HashSet<>()).add(h.getUserId()));
+    checkInRepository.findByCheckDateGreaterThanEqual(today.minusDays(6))
+        .forEach(c -> buckets.computeIfAbsent(c.getCheckDate(), d -> new HashSet<>()).add(c.getUserId()));
+    List<Map<String, Object>> daily = new ArrayList<>();
+    buckets.forEach((date, users) -> {
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("date", date.toString());
+      item.put("count", users.size());
+      daily.add(item);
+    });
+    return daily;
   }
 
   /**
