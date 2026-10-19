@@ -87,7 +87,33 @@ public class AdminStatsService {
     data.put("aiGlobalLimit", aiDailyQuota.globalLimit());
     data.put("aiGlobalRemaining", aiDailyQuota.globalRemaining());
     data.put("subscribeActive", subscribeRecordRepository.countByStatus(SubscribeRecord.STATUS_ACTIVE));
+    // 板块使用次数：有行为记录的模块全量统计；星运浏览未埋点，返回 null 由前端标注
+    data.put("moduleUsage", moduleUsage());
     return data;
+  }
+
+  /**
+   * 板块使用次数（全量累计）：
+   * 塔罗/起卦/配对取自 user_history 的 type 计数（每日一卦的 type 是小写 hexagram，历史遗留），
+   * 打卡取 check_in 总数；星运页浏览没有埋点记录，count 为 null 表示「未统计」而不是 0
+   */
+  private List<Map<String, Object>> moduleUsage() {
+    List<Map<String, Object>> list = new ArrayList<>();
+    list.add(moduleItem("tarot", "塔罗抽牌", userHistoryRepository.countByType("TAROT")));
+    list.add(moduleItem("match", "星座配对", userHistoryRepository.countByType("MATCH")));
+    list.add(moduleItem("bagua", "八卦起卦", userHistoryRepository.countByType("BAGUA")));
+    list.add(moduleItem("hexagram", "每日一卦", userHistoryRepository.countByType("hexagram")));
+    list.add(moduleItem("checkin", "每日打卡", checkInRepository.count()));
+    list.add(moduleItem("fortune", "星运浏览", null)); // 未埋点
+    return list;
+  }
+
+  private Map<String, Object> moduleItem(String key, String name, Long count) {
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("key", key);
+    item.put("name", name);
+    item.put("count", count);
+    return item;
   }
 
   /**
