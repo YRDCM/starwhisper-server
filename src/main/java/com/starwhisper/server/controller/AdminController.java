@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -99,9 +100,38 @@ public class AdminController {
     }
   }
 
-  /* ===== 模块三：参数配置 ===== */
+  /**
+   * 某用户某天的功能使用明细：GET /api/admin/users/{id}/daily-usage?date=2026-10-19&key=xxx
+   * date 可选（默认今天），格式 YYYY-MM-DD；用户不存在 404，日期格式非法 400
+   */
+  @GetMapping("/users/{id}/daily-usage")
+  public ResponseEntity<Result<Map<String, Object>>> dailyUsage(@PathVariable Long id,
+                                                                @RequestParam(required = false) String date,
+                                                                @RequestParam(required = false) String key,
+                                                                @RequestHeader(value = "X-Admin-Key", required = false) String headerKey) {
+    if (!authorized(key, headerKey)) return denied();
+    LocalDate day = null;
+    if (StringUtils.hasText(date)) {
+      try {
+        day = LocalDate.parse(date.trim());
+      } catch (Exception e) {
+        Result<Map<String, Object>> badRequest = new Result<>();
+        badRequest.setCode(400);
+        badRequest.setMessage("日期格式应为 YYYY-MM-DD");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(badRequest);
+      }
+    }
+    try {
+      return ResponseEntity.ok(Result.ok0(adminUserService.dailyUsage(id, day)));
+    } catch (IllegalArgumentException e) {
+      Result<Map<String, Object>> notFound = new Result<>();
+      notFound.setCode(404);
+      notFound.setMessage(e.getMessage());
+      return ResponseEntity.status(HttpStatus.NOT_FOUND).body(notFound);
+    }
+  }
 
-  /** 全部可编辑配置项：GET /api/admin/config?key=xxx */
+  /* ===== 模块三：参数配置 ===== */  /** 全部可编辑配置项：GET /api/admin/config?key=xxx */
   @GetMapping("/config")
   public ResponseEntity<Result<List<Map<String, Object>>>> configList(@RequestParam(required = false) String key,
                                                                       @RequestHeader(value = "X-Admin-Key", required = false) String headerKey) {

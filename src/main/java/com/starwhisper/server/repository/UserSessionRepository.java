@@ -23,4 +23,7 @@ public interface UserSessionRepository extends JpaRepository<UserSession, String
   // 后台用户管理：一批用户各自的最近登录时间（userId -> max(createdAt)）
   @Query("select s.userId, max(s.createdAt) from UserSession s where s.userId in :ids group by s.userId")
   List<Object[]> findLastActiveAtByUserIdIn(@Param("ids") List<Long> ids);
+
+  // 后台「某天用了哪些功能」：某用户一天内的登录次数
+  long countByUserIdAndCreatedAtBetween(Long userId, LocalDateTime start, LocalDateTime end);
 }

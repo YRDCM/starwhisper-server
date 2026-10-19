@@ -155,6 +155,66 @@ public class AdminUserService {
   }
 
   /**
+   * 某用户某天的功能使用明细：
+   * modules = 各板块当日次数（登录/打卡/塔罗/配对/起卦/每日一卦；星运浏览和 AI 解读未按用户落库，标 null 表示未统计）
+   * events  = 当日行为时间线（从 user_history + 打卡还原，时间升序）
+   * date 为 null 时默认今天；用户不存在抛 IllegalArgumentException
+   */
+  public Map<String, Object> dailyUsage(Long userId, LocalDate date) {
+    if (!appUserRepository.existsById(userId)) {
+      throw new IllegalArgumentException("用户不存在：" + userId);
+    }
+    LocalDate day = date == null ? LocalDate.now() : date;
+    LocalDateTime start = day.atStartOfDay();
+    LocalDateTime end = day.plusDays(1).atStartOfDay();
+
+    List<UserHistory> histories = userHistoryRepository
+        .findByUserIdAndCreatedAtBetweenOrderByCreatedAtAsc(userId, start, end);
+    long logins = userSessionRepository.countByUserIdAndCreatedAtBetween(userId, start, end);
+    long checkins = checkInRepository.countByUserIdAndCheckDate(userId, day);
+
+    // 板块计数：user_history 按 type 分组（每日一卦历史 type 是小写 hexagram，兼容）
+    Map<String, Long> byType = histories.stream()
+        .collect(Collectors.groupingBy(h -> h.getType() == null ? "unknown" : h.getType(), Collectors.counting()));
+
+    List<Map<String, Object>> modules = new ArrayList<>();
+    modules.add(usageItem("login", "登录", logins));
+    modules.add(usageItem("checkin", "每日打卡", checkins));
+    modules.add(usageItem("tarot", "塔罗抽牌", byType.getOrDefault("TAROT", 0L)));
+    modules.add(usageItem("match", "星座配对", byType.getOrDefault("MATCH", 0L)));
+    modules.add(usageItem("bagua", "八卦起卦", byType.getOrDefault("BAGUA", 0L)));
+    modules.add(usageItem("hexagram", "每日一卦",
+        byType.getOrDefault("hexagram", 0L) + byType.getOrDefault("HEXAGRAM", 0L)));
+    modules.add(usageItem("fortune", "星运浏览", null)); // 未埋点
+    modules.add(usageItem("ai", "AI 解读", null));       // 限额按 IP 记内存，未按用户落库
+
+    // 当日时间线
+    List<Map<String, Object>> events = new ArrayList<>();
+    for (UserHistory history : histories) {
+      Map<String, Object> event = new LinkedHashMap<>();
+      event.put("time", history.getCreatedAt().toLocalTime().toString());
+      event.put("type", history.getType());
+      event.put("title", historyTitle(history));
+      events.add(event);
+    }
+
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("userId", userId);
+    data.put("date", day.toString());
+    data.put("modules", modules);
+    data.put("events", events);
+    return data;
+  }
+
+  private Map<String, Object> usageItem(String key, String name, Long count) {
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("key", key);
+    item.put("name", name);
+    item.put("count", count); // null = 该板块未按用户统计，前端显示「未统计」而非 0
+    return item;
+  }
+
+  /**
    * 当前连续打卡天数，口径与 CheckInService.buildSummary 一致：
    * 今天打了从今天往前数；没打从昨天往前数（今天还有机会补）；昨天也断就是 0
    */

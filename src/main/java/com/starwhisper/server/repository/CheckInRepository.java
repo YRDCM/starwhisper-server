@@ -34,4 +34,7 @@ public interface CheckInRepository extends JpaRepository<CheckIn, Long> {
 
   // 后台用户管理：一批用户的全部打卡记录（日期新的在前），内存里算连续/累计
   List<CheckIn> findByUserIdInOrderByCheckDateDesc(List<Long> userIds);
+
+  // 后台「某天用了哪些功能」：某用户某天是否打卡（一天最多一条）
+  long countByUserIdAndCheckDate(Long userId, LocalDate checkDate);
 }

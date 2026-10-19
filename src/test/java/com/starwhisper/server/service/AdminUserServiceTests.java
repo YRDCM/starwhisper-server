@@ -160,4 +160,57 @@ class AdminUserServiceTests {
     when(users.findById(99L)).thenReturn(Optional.empty());
     assertThrows(IllegalArgumentException.class, () -> service().userDetail(99L));
   }
+
+  private UserHistory hist(Long userId, String type, String title, LocalDateTime at) {
+    UserHistory h = new UserHistory();
+    h.setUserId(userId);
+    h.setType(type);
+    h.setTitle(title);
+    h.setCreatedAt(at);
+    return h;
+  }
+
+  @Test void dailyUsageGroupsModulesAndTimeline() {
+    LocalDate day = LocalDate.of(2026, 10, 19);
+    when(users.existsById(9L)).thenReturn(true);
+    when(histories.findByUserIdAndCreatedAtBetweenOrderByCreatedAtAsc(
+        eq(9L), any(LocalDateTime.class), any(LocalDateTime.class)))
+        .thenReturn(List.of(
+            hist(9L, "TAROT", "单牌指引", day.atTime(9, 0)),
+            hist(9L, "TAROT", "三牌阵", day.atTime(9, 5)),
+            hist(9L, "MATCH", "白羊×金牛", day.atTime(10, 0)),
+            hist(9L, "hexagram", "每日一卦", day.atTime(11, 0))));
+    when(sessions.countByUserIdAndCreatedAtBetween(eq(9L), any(LocalDateTime.class), any(LocalDateTime.class)))
+        .thenReturn(2L);
+    when(checkins.countByUserIdAndCheckDate(9L, day)).thenReturn(1L);
+
+    Map<String, Object> data = service().dailyUsage(9L, day);
+
+    assertEquals("2026-10-19", data.get("date"));
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> modules = (List<Map<String, Object>>) data.get("modules");
+    Map<String, Map<String, Object>> byKey = modules.stream().collect(java.util.stream.Collectors.toMap(m -> (String) m.get("key"), m -> m));
+    assertEquals(2L, byKey.get("login").get("count"));
+    assertEquals(1L, byKey.get("checkin").get("count"));
+    assertEquals(2L, byKey.get("tarot").get("count"));
+    assertEquals(1L, byKey.get("match").get("count"));
+    assertEquals(1L, byKey.get("hexagram").get("count"));
+    assertEquals(0L, byKey.get("bagua").get("count"));
+    assertNull(byKey.get("fortune").get("count")); // 未埋点必须是 null 而不是 0
+    assertNull(byKey.get("ai").get("count"));
+
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> events = (List<Map<String, Object>>) data.get("events");
+    assertEquals(4, events.size());
+    assertEquals("09:00", events.get(0).get("time")); // 时间升序
+  }
+
+  @Test void dailyUsageDefaultsToTodayAndRejectsMissingUser() {
+    when(users.existsById(9L)).thenReturn(false);
+    assertThrows(IllegalArgumentException.class, () -> service().dailyUsage(9L, null));
+
+    when(users.existsById(9L)).thenReturn(true);
+    Map<String, Object> data = service().dailyUsage(9L, null);
+    assertEquals(LocalDate.now().toString(), data.get("date"));
+  }
 }

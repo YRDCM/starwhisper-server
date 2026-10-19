@@ -38,4 +38,7 @@ public interface UserHistoryRepository extends JpaRepository<UserHistory, Long> 
 
   // 后台用户详情：最近 20 条历史，最新在前
   List<UserHistory> findTop20ByUserIdOrderByCreatedAtDesc(Long userId);
+
+  // 后台「某天用了哪些功能」：取某用户一天内的全部行为记录（按时间升序）
+  List<UserHistory> findByUserIdAndCreatedAtBetweenOrderByCreatedAtAsc(Long userId, LocalDateTime start, LocalDateTime end);
 }
