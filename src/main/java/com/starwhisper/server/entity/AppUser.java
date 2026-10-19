@@ -24,8 +24,8 @@ public class AppUser {
   @Column(length = 64, unique = true)
   private String openid;        // 微信 openid；dev 登录用 "dev_" 前缀的伪 openid
 
-  @Column(length = 64)
-  private String nickname = "星语旅人"; // 默认昵称
+  @Column(length = 64, unique = true)
+  private String nickname = "星语旅人"; // 昵称唯一；默认值会被 AuthService 加后缀去重（如 星语旅人·3a7f）
 
   @Column(length = 512)
   private String avatarUrl;     // 头像，可空

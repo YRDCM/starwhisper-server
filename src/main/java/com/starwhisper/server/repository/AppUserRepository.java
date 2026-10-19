@@ -17,6 +17,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
   // 按微信 openid 查用户（登录时用）
   Optional<AppUser> findByOpenid(String openid);
 
+  // 昵称唯一性校验（重名检查用；昵称有唯一索引兜底）
+  Optional<AppUser> findByNickname(String nickname);
+
   // 统计：某时刻之后注册的用户数 / 用户列表（后台新增用户统计用）
   long countByCreatedAtGreaterThanEqual(LocalDateTime since);
 

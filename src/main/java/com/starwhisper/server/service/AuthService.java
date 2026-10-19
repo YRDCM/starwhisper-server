@@ -149,19 +149,36 @@ public class AuthService {
 
   /**
    * 按 openid 找用户，没有就注册；更新最后登录时间
+   * 昵称唯一（DB 有唯一索引兜底）：默认/传入昵称撞名时自动加 ·xxxx 后缀
    */
   private AppUser upsertUser(String openid, String nickname) {
     AppUser user = appUserRepository.findByOpenid(openid).orElseGet(() -> {
       AppUser fresh = new AppUser();
       fresh.setOpenid(openid);
       fresh.setCreatedAt(LocalDateTime.now());
-      if (StringUtils.hasText(nickname)) {
-        fresh.setNickname(nickname.trim());
-      }
+      fresh.setNickname(uniqueNickname(nickname));
       return fresh;
     });
     user.setLastLoginAt(LocalDateTime.now());
     return appUserRepository.save(user);
+  }
+
+  /**
+   * 生成不撞名的昵称：传了就用传入的（撞名加后缀），没传用「星语旅人」打底。
+   * 后缀取 4 位随机十六进制，撞了重试，最多 10 次（理论上是 astronomically 小概率）
+   */
+  String uniqueNickname(String nickname) {
+    String base = StringUtils.hasText(nickname) ? nickname.trim() : "星语旅人";
+    if (appUserRepository.findByNickname(base).isEmpty()) {
+      return base;
+    }
+    for (int i = 0; i < 10; i++) {
+      String candidate = base + "·" + UUID.randomUUID().toString().replace("-", "").substring(0, 4);
+      if (appUserRepository.findByNickname(candidate).isEmpty()) {
+        return candidate;
+      }
+    }
+    throw new IllegalStateException("昵称分配失败，请重试");
   }
 
   /**

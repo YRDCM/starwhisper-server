@@ -54,7 +54,7 @@ public class UserController {
 
   /**
    * 更新资料：POST /api/user/profile，body {"nickname": "...", "avatarUrl": "..."}
-   * 只更新传了的非空字段
+   * 只更新传了的非空字段；昵称全站唯一，撞名直接报错（用户主动改昵称要给明确反馈，不静默加后缀）
    */
   @PostMapping("/profile")
   public Result<Map<String, Object>> profile(HttpServletRequest request,
@@ -63,7 +63,12 @@ public class UserController {
     String nickname = body.get("nickname");
     String avatarUrl = body.get("avatarUrl");
     if (StringUtils.hasText(nickname)) {
-      user.setNickname(nickname.trim());
+      String trimmed = nickname.trim();
+      // 重名校验：别的用户已占用就拒绝（排除自己）
+      appUserRepository.findByNickname(trimmed)
+          .filter(other -> !other.getId().equals(user.getId()))
+          .ifPresent(other -> { throw new IllegalArgumentException("昵称已被使用，换一个试试"); });
+      user.setNickname(trimmed);
     }
     if (StringUtils.hasText(avatarUrl)) {
       user.setAvatarUrl(avatarUrl.trim());
