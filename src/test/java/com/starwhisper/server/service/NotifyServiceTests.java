@@ -92,6 +92,28 @@ class NotifyServiceTests {
   }
 
   @Test
+  void 每周运势场景同样支持订阅且互不干扰() {
+    AppUser u = user(4L);
+    when(subscribeRepo.findByUserIdAndScene(4L, "WEEKLY_FORTUNE")).thenReturn(Optional.empty());
+
+    service.subscribe(u, "weekly_fortune", "leo"); // 小写场景名应被规整
+
+    ArgumentCaptor<SubscribeRecord> captor = ArgumentCaptor.forClass(SubscribeRecord.class);
+    verify(subscribeRepo).save(captor.capture());
+    SubscribeRecord saved = captor.getValue();
+    assertEquals("WEEKLY_FORTUNE", saved.getScene());
+    assertEquals(SubscribeRecord.STATUS_ACTIVE, saved.getStatus());
+    assertEquals("leo", u.getSignNameEn());
+
+    // 状态接口把两个场景的 ACTIVE 订阅都原样返回
+    when(subscribeRepo.findByUserIdAndStatus(4L, SubscribeRecord.STATUS_ACTIVE))
+        .thenReturn(List.of(
+            new SubscribeRecord(4L, "DAILY_FORTUNE", SubscribeRecord.STATUS_ACTIVE, LocalDateTime.now()),
+            new SubscribeRecord(4L, "WEEKLY_FORTUNE", SubscribeRecord.STATUS_ACTIVE, LocalDateTime.now())));
+    assertEquals(List.of("DAILY_FORTUNE", "WEEKLY_FORTUNE"), service.activeScenes(4L));
+  }
+
+  @Test
   void 非法场景直接拒绝() {
     assertThrows(IllegalArgumentException.class, () -> service.subscribe(user(1L), "", null));
     assertThrows(IllegalArgumentException.class, () -> service.subscribe(user(1L), "HACK", null));

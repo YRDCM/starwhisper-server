@@ -28,7 +28,8 @@ public class NotifyService {
   private static final Logger log = LoggerFactory.getLogger(NotifyService.class);
 
   /** 目前支持的订阅场景（白名单校验，防止前端乱传脏数据） */
-  private static final Set<String> SCENES = Set.of(SubscribeRecord.SCENE_DAILY_FORTUNE);
+  private static final Set<String> SCENES = Set.of(
+      SubscribeRecord.SCENE_DAILY_FORTUNE, SubscribeRecord.SCENE_WEEKLY_FORTUNE);
 
   private final SubscribeRecordRepository subscribeRecordRepository;
   private final AppUserRepository appUserRepository;

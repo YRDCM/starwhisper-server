@@ -27,8 +27,10 @@ public class SubscribeRecord {
   /**
    * 场景枚举（先用字符串存，以后加场景直接加常量，不用改表）：
    * DAILY_FORTUNE 每日运势提醒
+   * WEEKLY_FORTUNE 每周运势提醒（每周一早上推送）
    */
   public static final String SCENE_DAILY_FORTUNE = "DAILY_FORTUNE";
+  public static final String SCENE_WEEKLY_FORTUNE = "WEEKLY_FORTUNE";
 
   /** 状态：待推送 */
   public static final String STATUS_ACTIVE = "ACTIVE";
