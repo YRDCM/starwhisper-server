@@ -7,6 +7,7 @@ import com.starwhisper.server.repository.CheckInRepository;
 import com.starwhisper.server.repository.SubscribeRecordRepository;
 import com.starwhisper.server.repository.UserHistoryRepository;
 import com.starwhisper.server.repository.UserSessionRepository;
+import com.starwhisper.server.repository.UsageEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ public class AdminStatsService {
   private final UserSessionRepository userSessionRepository;
   private final SubscribeRecordRepository subscribeRecordRepository;
   private final AiDailyQuota aiDailyQuota;
+  private final UsageEventRepository usageEventRepository;
   private final ObjectMapper objectMapper;
 
   public AdminStatsService(AppUserRepository appUserRepository,
@@ -45,6 +47,7 @@ public class AdminStatsService {
                            UserSessionRepository userSessionRepository,
                            SubscribeRecordRepository subscribeRecordRepository,
                            AiDailyQuota aiDailyQuota,
+                           UsageEventRepository usageEventRepository,
                            ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
     this.checkInRepository = checkInRepository;
@@ -52,6 +55,7 @@ public class AdminStatsService {
     this.userSessionRepository = userSessionRepository;
     this.subscribeRecordRepository = subscribeRecordRepository;
     this.aiDailyQuota = aiDailyQuota;
+    this.usageEventRepository = usageEventRepository;
     this.objectMapper = objectMapper;
   }
 
@@ -89,7 +93,29 @@ public class AdminStatsService {
     data.put("subscribeActive", subscribeRecordRepository.countByStatus(SubscribeRecord.STATUS_ACTIVE));
     // 板块使用次数：有行为记录的模块全量统计；星运浏览未埋点，返回 null 由前端标注
     data.put("moduleUsage", moduleUsage());
+    // 今日板块使用（登录 vs 游客拆分）+ 今日活跃游客数（按 IP 去重）；2026-10-20 起有埋点数据
+    data.put("todayModuleSplit", todayModuleSplit(today, dayStart));
+    data.put("todayGuestActive", usageEventRepository.countDistinctGuestIpsSince(dayStart));
     return data;
+  }
+
+  /** 今日板块使用：登录用户次数 / 游客次数（埋点表 usage_event 按天聚合） */
+  private List<Map<String, Object>> todayModuleSplit(LocalDate today, LocalDateTime dayStart) {
+    LocalDateTime end = today.plusDays(1).atStartOfDay();
+    String[][] modules = {
+        {"fortune", "星运浏览"}, {"tarot", "塔罗抽牌"}, {"match", "星座配对"},
+        {"bagua", "八卦起卦"}, {"hexagram", "每日一卦"}, {"checkin", "每日打卡"}, {"ai", "AI 解读"}
+    };
+    List<Map<String, Object>> list = new ArrayList<>();
+    for (String[] m : modules) {
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("key", m[0]);
+      item.put("name", m[1]);
+      item.put("user", usageEventRepository.countByModuleAndUserIdIsNotNullAndCreatedAtBetween(m[0], dayStart, end));
+      item.put("guest", usageEventRepository.countByModuleAndUserIdIsNullAndCreatedAtBetween(m[0], dayStart, end));
+      list.add(item);
+    }
+    return list;
   }
 
   /**

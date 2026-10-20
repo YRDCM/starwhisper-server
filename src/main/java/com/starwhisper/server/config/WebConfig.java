@@ -1,6 +1,7 @@
 package com.starwhisper.server.config;
 
 import com.starwhisper.server.common.AuthInterceptor;
+import com.starwhisper.server.common.UsageTrackInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -15,9 +16,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
   private final AuthInterceptor authInterceptor;
+  private final UsageTrackInterceptor usageTrackInterceptor;
 
-  public WebConfig(AuthInterceptor authInterceptor) {
+  public WebConfig(AuthInterceptor authInterceptor, UsageTrackInterceptor usageTrackInterceptor) {
     this.authInterceptor = authInterceptor;
+    this.usageTrackInterceptor = usageTrackInterceptor;
   }
 
   @Override
@@ -33,5 +36,7 @@ public class WebConfig implements WebMvcConfigurer {
   public void addInterceptors(InterceptorRegistry registry) {
     // 登录拦截：解析 token 挂当前用户；只有 /api/user/** 强制登录，其余接口游客可用
     registry.addInterceptor(authInterceptor).addPathPatterns("/api/**");
+    // 使用埋点：在登录拦截之后（需要 CurrentUser），记录关键功能接口（含游客）
+    registry.addInterceptor(usageTrackInterceptor).addPathPatterns("/api/**");
   }
 }
