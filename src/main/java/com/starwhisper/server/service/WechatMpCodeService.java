@@ -3,93 +3,50 @@ package com.starwhisper.server.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
-import java.util.Map;
 
 /**
- * 微信小程序码（wxacode.getUnlimited）：海报分享裂变用。
- * 首次生成后落盘缓存（/opt/starwhisper/mpcode/{scene}.png），同一 scene 只调一次微信。
- * 返回 base64 给小程序端（避免小程序 downloadFile 合法域名的额外配置）。
+ * 小程序码服务（海报用）：直接读服务器上的官方小程序码静态图（公众平台后台下载的正式版码），
+ * 返回 base64 给小程序端绘制海报。
+ * 不调用微信 getwxacode 接口——微信网关会拦截 Java POST（412 空 body），静态码稳定无依赖。
+ * 读取后缓存内存，文件变化需重启或清除缓存（静态码本身不会变）。
  */
 @Service
 public class WechatMpCodeService {
 
   private static final Logger log = LoggerFactory.getLogger(WechatMpCodeService.class);
 
-  private static final String API = "https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=";
+  private final Path codeFile;
+  private volatile byte[] cached;
 
-  private final WechatAccessTokenManager tokenManager;
-  private final RestClient restClient;
-  private final Path cacheDir;
-
-  public WechatMpCodeService(WechatAccessTokenManager tokenManager,
-                             @Value("${wx.mpcode.cache-dir:/opt/starwhisper/mpcode}") String cacheDir) {
-    this.tokenManager = tokenManager;
-    this.cacheDir = Path.of(cacheDir);
-    SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-    factory.setConnectTimeout(5000);
-    factory.setReadTimeout(15000);
-    this.restClient = RestClient.builder().requestFactory(factory).build();
+  public WechatMpCodeService(@Value("${wx.mpcode.file:/opt/starwhisper/mpcode/official.jpg}") String codeFile) {
+    this.codeFile = Path.of(codeFile);
   }
 
   /**
-   * 取小程序码 PNG 的 base64。scene 限 32 字符内（只保留微信允许的字符集）。
-   * 微信报错（未发布/额度等）抛 IllegalStateException，调用方自行降级（海报无码也能出）
+   * 取小程序码图片的 base64。scene 参数保留（官方码不带 scene，当前忽略）
+   * 文件缺失/读取失败抛 IllegalStateException，调用方降级（海报回退占位框）
    */
   public String mpCodeBase64(String scene) {
-    String safeScene = sanitize(scene);
-    try {
-      Files.createDirectories(cacheDir);
-      Path file = cacheDir.resolve((safeScene.isEmpty() ? "fortune" : safeScene) + ".png");
-      byte[] png = Files.exists(file) ? Files.readAllBytes(file) : generate(safeScene, file);
-      return Base64.getEncoder().encodeToString(png);
-    } catch (IOException e) {
-      throw new IllegalStateException("小程序码缓存读写失败：" + e.getMessage());
+    byte[] bytes = cached;
+    if (bytes == null) {
+      synchronized (this) {
+        if (cached == null) {
+          try {
+            cached = Files.readAllBytes(codeFile);
+            log.info("官方小程序码已加载：{}（{} 字节）", codeFile, cached.length);
+          } catch (IOException e) {
+            throw new IllegalStateException("小程序码文件不可读：" + codeFile);
+          }
+        }
+        bytes = cached;
+      }
     }
-  }
-
-  private byte[] generate(String scene, Path file) throws IOException {
-    String token = tokenManager.getAccessToken();
-    // check_path=false：page 仅作跳转目标，不校验页面是否存在于已发布版本
-    Map<String, Object> body = Map.of(
-        "scene", scene,
-        "page", "pages/fortune/fortune",
-        "width", 200,
-        "check_path", false,
-        "env_version", "release");
-    byte[] resp = restClient.post()
-        .uri(API + token)
-        .contentType(MediaType.APPLICATION_JSON)
-        .body(body)
-        .retrieve()
-        .body(byte[].class);
-    if (resp == null || resp.length == 0) {
-      throw new IllegalStateException("微信返回空响应");
-    }
-    // 出错时微信返回 JSON 而不是 PNG
-    if (resp[0] == '{') {
-      String error = new String(resp, StandardCharsets.UTF_8);
-      log.warn("小程序码生成失败：scene={}, 微信返回={}", scene, error);
-      throw new IllegalStateException("微信接口报错：" + error);
-    }
-    Files.write(file, resp);
-    log.info("小程序码已生成并缓存：scene={}, file={}", scene, file);
-    return resp;
-  }
-
-  /** scene 清洗：微信允许 数字/英文/!#$&'()*+,/:;=?@-._~，且 ≤32 字符 */
-  public static String sanitize(String scene) {
-    if (scene == null) return "";
-    String cleaned = scene.replaceAll("[^0-9A-Za-z!#$&'()*+,/:;=?@\\-._~]", "");
-    return cleaned.length() <= 32 ? cleaned : cleaned.substring(0, 32);
+    return Base64.getEncoder().encodeToString(bytes);
   }
 }
