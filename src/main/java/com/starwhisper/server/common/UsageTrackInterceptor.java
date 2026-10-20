@@ -38,7 +38,7 @@ public class UsageTrackInterceptor implements HandlerInterceptor {
     boolean post = "POST".equalsIgnoreCase(method);
     // 星运（今日/近7天/本周都算星运浏览）
     if (get && (uri.equals("/api/fortune/today") || uri.equals("/api/fortune/week") || uri.equals("/api/fortune/weekly"))) return "fortune";
-    if (post && uri.equals("/api/match")) return "match";
+    if ((get || post) && uri.equals("/api/match")) return "match"; // 配对接口是 GET（查询参数）
     if ((post && uri.equals("/api/tarot/draw")) || (get && uri.equals("/api/tarot/daily"))) return "tarot";
     if (post && uri.equals("/api/bagua/cast")) return "bagua";
     if (get && uri.equals("/api/hexagram/today")) return "hexagram";

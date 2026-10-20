@@ -16,6 +16,7 @@ class UsageTrackTests {
     assertEquals("fortune", UsageTrackInterceptor.moduleOf("GET", "/api/fortune/week"));
     assertEquals("fortune", UsageTrackInterceptor.moduleOf("GET", "/api/fortune/weekly"));
     assertEquals("match", UsageTrackInterceptor.moduleOf("POST", "/api/match"));
+    assertEquals("match", UsageTrackInterceptor.moduleOf("GET", "/api/match")); // 实际是 GET 接口
     assertEquals("tarot", UsageTrackInterceptor.moduleOf("POST", "/api/tarot/draw"));
     assertEquals("tarot", UsageTrackInterceptor.moduleOf("GET", "/api/tarot/daily"));
     assertEquals("bagua", UsageTrackInterceptor.moduleOf("POST", "/api/bagua/cast"));
