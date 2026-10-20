@@ -26,6 +26,10 @@ public interface UsageEventRepository extends JpaRepository<UsageEvent, Long> {
   @Query("select count(distinct e.ip) from UsageEvent e where e.userId is null and e.createdAt between :start and :end")
   long countDistinctGuestIpsBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
+  // 某日活跃登录用户数（埋点行为去重，运营日报用）
+  @Query("select count(distinct e.userId) from UsageEvent e where e.userId is not null and e.createdAt between :start and :end")
+  long countDistinctUsersBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
   // 某模块某时段次数（不区分身份，总览模块使用次数用）
   long countByModuleAndCreatedAtGreaterThanEqual(String module, LocalDateTime since);
 

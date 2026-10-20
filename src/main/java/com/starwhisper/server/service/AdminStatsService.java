@@ -60,6 +60,27 @@ public class AdminStatsService {
   }
 
   /**
+   * 运营日报（某一天）：新增/活跃（登录+游客）/板块使用拆分/打卡
+   * date 为 null 默认昨天；AI 解读用量只有当天的内存计数，历史日期返回 null
+   */
+  public Map<String, Object> dailyReport(LocalDate date) {
+    LocalDate day = date == null ? LocalDate.now().minusDays(1) : date;
+    LocalDateTime start = day.atStartOfDay();
+    LocalDateTime end = day.plusDays(1).atStartOfDay();
+
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("date", day.toString());
+    data.put("userCount", appUserRepository.count()); // 截至当前的总用户（参考值）
+    data.put("newUsers", appUserRepository.countByCreatedAtBetween(start, end));
+    data.put("activeUsers", usageEventRepository.countDistinctUsersBetween(start, end));
+    data.put("guestActive", usageEventRepository.countDistinctGuestIpsBetween(start, end));
+    data.put("checkins", checkInRepository.countByCheckDate(day));
+    data.put("aiUsed", day.equals(LocalDate.now()) ? aiDailyQuota.todayUsed() : null); // 历史无记录
+    data.put("moduleSplit", todayModuleSplit(day, start));
+    return data;
+  }
+
+  /**
    * 运营统计总览
    * todayActive 口径：今天有过登录（新建会话）、打卡、或产生占卜历史的去重用户数
    */

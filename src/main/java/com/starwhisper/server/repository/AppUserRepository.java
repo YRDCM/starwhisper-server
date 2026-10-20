@@ -23,6 +23,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
   // 统计：某时刻之后注册的用户数 / 用户列表（后台新增用户统计用）
   long countByCreatedAtGreaterThanEqual(LocalDateTime since);
 
+  // 统计：某天注册的用户数（运营日报用）
+  long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
   List<AppUser> findByCreatedAtGreaterThanEqual(LocalDateTime since);
 
   // 后台用户管理：昵称模糊分页（大小写不敏感）

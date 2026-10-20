@@ -71,8 +71,30 @@ public class AdminController {
     return ResponseEntity.ok(Result.ok0(adminStatsService.stats()));
   }
 
-  /* ===== 模块二：用户管理 ===== */
+  /**
+   * 运营日报：GET /api/admin/daily-report?date=2026-10-19&key=xxx
+   * date 可选（默认昨天），格式 YYYY-MM-DD
+   */
+  @GetMapping("/daily-report")
+  public ResponseEntity<Result<Map<String, Object>>> dailyReport(@RequestParam(required = false) String date,
+                                                                 @RequestParam(required = false) String key,
+                                                                 @RequestHeader(value = "X-Admin-Key", required = false) String headerKey) {
+    if (!authorized(key, headerKey)) return denied();
+    LocalDate day = null;
+    if (StringUtils.hasText(date)) {
+      try {
+        day = LocalDate.parse(date.trim());
+      } catch (Exception e) {
+        Result<Map<String, Object>> badRequest = new Result<>();
+        badRequest.setCode(400);
+        badRequest.setMessage("日期格式应为 YYYY-MM-DD");
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(badRequest);
+      }
+    }
+    return ResponseEntity.ok(Result.ok0(adminStatsService.dailyReport(day)));
+  }
 
+  /* ===== 模块二：用户管理 ===== */
   /** 用户分页列表：GET /api/admin/users?page=0&size=20&keyword=&key=xxx */
   @GetMapping("/users")
   public ResponseEntity<Result<Map<String, Object>>> users(@RequestParam(defaultValue = "0") int page,
