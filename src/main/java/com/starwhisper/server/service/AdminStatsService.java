@@ -114,9 +114,10 @@ public class AdminStatsService {
     data.put("subscribeActive", subscribeRecordRepository.countByStatus(SubscribeRecord.STATUS_ACTIVE));
     // 板块使用次数：有行为记录的模块全量统计；星运浏览未埋点，返回 null 由前端标注
     data.put("moduleUsage", moduleUsage());
-    // 今日板块使用（登录 vs 游客拆分）+ 今日活跃游客数（按 IP 去重）；2026-10-20 起有埋点数据
+    // 今日板块使用（登录 vs 游客拆分）+ 今日活跃游客/用户 IP 数（按 IP 去重）；2026-10-20 起有埋点数据
     data.put("todayModuleSplit", todayModuleSplit(today, dayStart));
     data.put("todayGuestActive", usageEventRepository.countDistinctGuestIpsSince(dayStart));
+    data.put("todayUserIps", usageEventRepository.countDistinctUserIpsSince(dayStart));
     return data;
   }
 

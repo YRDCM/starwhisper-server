@@ -18,13 +18,19 @@ public interface UsageEventRepository extends JpaRepository<UsageEvent, Long> {
 
   long countByModuleAndUserIdIsNotNullAndCreatedAtBetween(String module, LocalDateTime start, LocalDateTime end);
 
-  // 今日活跃游客数（按 IP 去重）
-  @Query("select count(distinct e.ip) from UsageEvent e where e.userId is null and e.createdAt >= :since")
+  // 今日活跃游客数（按 IP 去重；该 IP 当日有登录行为则不算游客）
+  @Query("select count(distinct e.ip) from UsageEvent e where e.userId is null and e.createdAt >= :since "
+      + "and e.ip not in (select e2.ip from UsageEvent e2 where e2.userId is not null and e2.createdAt >= :since)")
   long countDistinctGuestIpsSince(@Param("since") LocalDateTime since);
 
-  // 近 N 天逐日活跃游客数（后台趋势图用）
-  @Query("select count(distinct e.ip) from UsageEvent e where e.userId is null and e.createdAt between :start and :end")
+  // 近 N 天逐日活跃游客数（后台趋势图用；同样剔除当日有登录行为的 IP）
+  @Query("select count(distinct e.ip) from UsageEvent e where e.userId is null and e.createdAt between :start and :end "
+      + "and e.ip not in (select e2.ip from UsageEvent e2 where e2.userId is not null and e2.createdAt between :start and :end)")
   long countDistinctGuestIpsBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+  // 今日活跃登录用户数（按 IP 去重，后台「用户 IP」参数用）
+  @Query("select count(distinct e.ip) from UsageEvent e where e.userId is not null and e.createdAt >= :since")
+  long countDistinctUserIpsSince(@Param("since") LocalDateTime since);
 
   // 某日活跃登录用户数（埋点行为去重，运营日报用）
   @Query("select count(distinct e.userId) from UsageEvent e where e.userId is not null and e.createdAt between :start and :end")
