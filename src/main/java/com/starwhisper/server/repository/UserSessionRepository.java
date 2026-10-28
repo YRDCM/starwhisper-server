@@ -9,7 +9,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 登录会话数据访问层（主键就是 token）
+ * 登录会话数据访问层。
+ * 主键是 token 的 SHA-256 摘要（不是明文 token，见 TokenHasher）
  */
 public interface UserSessionRepository extends JpaRepository<UserSession, String> {
 
@@ -26,4 +27,7 @@ public interface UserSessionRepository extends JpaRepository<UserSession, String
 
   // 后台「某天用了哪些功能」：某用户一天内的登录次数
   long countByUserIdAndCreatedAtBetween(Long userId, LocalDateTime start, LocalDateTime end);
+
+  // 定时清理：删掉已过期的会话行（返回删除条数）
+  int deleteByExpiresAtBefore(LocalDateTime time);
 }

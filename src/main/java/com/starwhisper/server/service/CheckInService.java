@@ -2,9 +2,9 @@ package com.starwhisper.server.service;
 
 import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.entity.CheckIn;
-import com.starwhisper.server.repository.AppUserRepository;
 import com.starwhisper.server.repository.CheckInRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,27 +31,28 @@ public class CheckInService {
       new String[]{"total100", "银河旅人", "累计打卡 100 天", "100", "total"});
 
   private final CheckInRepository checkInRepository;
-  private final AppUserRepository appUserRepository;
 
-  public CheckInService(CheckInRepository checkInRepository, AppUserRepository appUserRepository) {
+  public CheckInService(CheckInRepository checkInRepository) {
     this.checkInRepository = checkInRepository;
-    this.appUserRepository = appUserRepository;
   }
 
   /**
-   * 打卡：幂等，今天打过了就直接返回当前状态，不会重复插行
+   * 打卡：幂等。
+   *
+   * 用 INSERT IGNORE 依赖唯一键 (user_id, check_date) 做原子幂等，
+   * 而不是「先 exists 再 save」——后者在并发下会撞唯一键抛 500。
    */
+  @Transactional
   public Map<String, Object> checkIn(AppUser user) {
     LocalDate today = LocalDate.now();
-    if (!checkInRepository.existsByUserIdAndCheckDate(user.getId(), today)) {
-      checkInRepository.save(new CheckIn(user.getId(), today, LocalDateTime.now()));
-    }
+    checkInRepository.insertIgnore(user.getId(), today, LocalDateTime.now());
     return status(user);
   }
 
   /**
    * 打卡状态：今天是否已打、连续天数、累计天数、最近 14 天记录
    */
+  @Transactional(readOnly = true)
   public Map<String, Object> status(AppUser user) {
     LocalDate today = LocalDate.now();
     List<CheckIn> all = checkInRepository.findByUserIdOrderByCheckDateDesc(user.getId());
@@ -83,27 +83,20 @@ public class CheckInService {
   }
 
   /**
-   * 打卡汇总（v4 契约，GET /api/checkin/summary?openid=xxx）：
-   * currentStreak / maxStreak / totalDays / todayChecked / badges
-   * openid 查不到用户时返回全零数据（游客也能看勋章墙，不报错）
+   * 打卡汇总（已登录用户）：凭 token 解析出的 userId 直接查。
+   * 不再接受 openid 入参 —— 那等于允许任何人拿别人的 openid 读别人的打卡数据（越权）。
    */
-  public Map<String, Object> summary(String openid) {
-    Set<LocalDate> dates = Set.of();
-    if (openid != null && !openid.isBlank()) {
-      Optional<AppUser> user = appUserRepository.findByOpenid(openid.trim());
-      if (user.isPresent()) {
-        dates = datesOf(user.get().getId());
-      }
-    }
-    return buildSummary(dates);
+  @Transactional(readOnly = true)
+  public Map<String, Object> summaryByUserId(Long userId) {
+    return buildSummary(datesOf(userId));
   }
 
   /**
-   * 打卡汇总（已登录用户）：凭 token 解析出的用户 id 直接查，
-   * 不依赖前端传 openid（前端曾误把用户 id 当 openid 传，导致已登录用户看到全零）
+   * 游客的汇总：全零数据（勋章墙可展示但均为未解锁）。
+   * 之前这里支持按 openid 查，属于越权读，已移除。
    */
-  public Map<String, Object> summaryByUserId(Long userId) {
-    return buildSummary(datesOf(userId));
+  public Map<String, Object> guestSummary() {
+    return buildSummary(Set.of());
   }
 
   private Set<LocalDate> datesOf(Long userId) {

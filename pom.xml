@@ -41,10 +41,39 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- 参数校验（@Valid / @NotBlank / @Min / @Max） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- 健康检查与指标：/actuator/health、/actuator/metrics（只在内网暴露） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
     <!-- 操作数据库（JPA） -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!-- 数据库迁移：表结构变更全部走版本化脚本，不再让 Hibernate 自动改表 -->
+    <!-- ⚠️ Spring Boot 4 把各技术的自动配置拆成了独立模块：
+         只加 flyway-core 不会启用自动配置，必须再加 spring-boot-flyway
+         （否则 spring.flyway.* 全部不生效，启动时也不会建 flyway_schema_history） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-mysql</artifactId>
     </dependency>
 
     <!-- MySQL 驱动 -->
@@ -61,6 +90,28 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-configuration-processor</artifactId>
+            </exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+
+      <!-- 把构建时间与 git commit 写进 MANIFEST，配合 /api/version 排查"线上到底跑的哪个版本" -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Build-Time>${maven.build.timestamp}</Build-Time>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
+          </archive>
+        </configuration>
       </plugin>
     </plugins>
   </build>

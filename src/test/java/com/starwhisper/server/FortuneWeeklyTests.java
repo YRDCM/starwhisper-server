@@ -170,7 +170,8 @@ class FortuneWeeklyTests {
         mock(com.starwhisper.server.repository.FortuneDailyRepository.class),
         signRepo,
         mock(com.starwhisper.server.service.impl.LocalFortuneProvider.class),
-        inactive);
+        inactive,
+        new com.starwhisper.server.service.ExternalCallGuard(1000, 3, 30));
 
     assertThrows(IllegalStateException.class, () -> service.getWeeklyFortune("leo"));
   }

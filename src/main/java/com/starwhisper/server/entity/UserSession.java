@@ -8,7 +8,10 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 登录会话：token 就是主键（UUID 去横线），有效期 30 天
+ * 登录会话。
+ *
+ * token 是主键，但存的**不是明文**：它是明文令牌的 SHA-256 摘要（64 位十六进制，见 TokenHasher）。
+ * 因此数据库被拖走也无法反推出可用的 token。有效期 30 天。
  */
 @Entity
 @Table(name = "user_session")
@@ -16,7 +19,7 @@ public class UserSession {
 
   @Id
   @Column(length = 64)
-  private String token;         // UUID 去横线
+  private String token;         // 明文 token 的 SHA-256（64 位 hex）
 
   private Long userId;
 

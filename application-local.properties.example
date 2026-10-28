@@ -1,14 +1,35 @@
-# 本地开发密钥（真实值），本文件已被 .gitignore 忽略，绝不提交！
+# 本地开发配置（真实值），本文件已被 .gitignore 忽略，绝不提交！
 # 复制本文件为 application-local.properties 并填入真实值即可本地运行。
+#
+# ⚠️ 这个文件是按「进程工作目录」被 spring.config.import 加载的。
+#    生产部署时工作目录不要指向源码目录，否则本地密钥会被带进生产。
 
-# ShowAPI 星座运势 appKey（showapi.com 控制台获取）
+# ===== 数据库 =====
+# 本地一般就是 root + 空密码；生产请改用业务账号并用环境变量注入，
+# 不要再让应用以 root 连库（见 application.properties 里的 DB_USERNAME 默认值）
+DB_USERNAME=root
+DB_PASSWORD=
+
+# ===== ShowAPI 星座运势 =====
+# showapi.com 控制台获取。留空则不调外部接口，全部走本地生成
 showapi.appKey=在这里填你的ShowAPI-appKey
 
-# 微信小程序
+# ===== 微信小程序 =====
 wechat.appid=在这里填小程序AppID
 wechat.secret=在这里填小程序AppSecret
 
-# Kimi（留空时关闭 AI 解牌，不影响普通抽牌；真实密钥不要提交）
+# ===== 后台管理密钥 =====
+# 必须 32 位以上随机串；未设置时所有 /api/admin/** 一律 403。
+# 生成方式：openssl rand -hex 24
+ADMIN_KEY=
+
+# ===== dev 免微信登录（可选，仅开发期）=====
+# 默认关闭。要开启必须同时设置下面两项，调用时请求头带 X-Dev-Token。
+# 只设 APP_DEV_LOGIN 不设 token 是**不会**放行的（双闸门）。
+app.dev-login=false
+app.dev-login-token=
+
+# ===== Kimi（留空时关闭 AI 解牌，不影响普通抽牌）=====
 kimi.api-key=
 kimi.model=kimi-k2.6
 kimi.per-ip-daily-limit=3

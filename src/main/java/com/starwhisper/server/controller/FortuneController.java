@@ -22,9 +22,12 @@ import java.util.List;
 @RequestMapping("/api/fortune")
 public class FortuneController {
 
+  /** 允许查询/生成的日期窗口（天）：防止有人拿 9999-12-31 这类日期把表灌满 */
+  private static final int MAX_DATE_WINDOW_DAYS = 365;
+  private static final int MAX_GENERATE_WINDOW_DAYS = 7;
+
   private final FortuneService fortuneService;
 
-  // 构造注入
   public FortuneController(FortuneService fortuneService) {
     this.fortuneService = fortuneService;
   }
@@ -39,10 +42,12 @@ public class FortuneController {
 
   /**
    * 指定日期运势：GET /api/fortune/date?sign=aries&date=2026-09-23
+   * 只允许前后一年内，超范围直接拒绝
    */
   @GetMapping("/date")
   public Result<FortuneVO> byDate(@RequestParam String sign,
                                   @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+    checkWithinWindow(date, MAX_DATE_WINDOW_DAYS);
     return Result.success(fortuneService.getFortune(sign, date));
   }
 
@@ -56,7 +61,7 @@ public class FortuneController {
 
   /**
    * 本周运势（ShowAPI week 节点）：GET /api/fortune/weekly?sign=leo
-   * 失败直接返回错误（code 500），前端显示错误态 —— 周运无本地兜底
+   * 失败直接返回错误，前端显示错误态 —— 周运无本地兜底，不拿编造内容冒充
    */
   @GetMapping("/weekly")
   public Result<WeeklyFortuneVO> weekly(@RequestParam String sign) {
@@ -65,12 +70,24 @@ public class FortuneController {
 
   /**
    * 批量生成某天的 12 星座运势（幂等）：POST /api/fortune/generate?date=2026-09-23
-   * 不传 date 默认今天，返回本次新增的条数
+   *
+   * ⚠️ 运维接口，需要 X-Admin-Key 请求头（由 AdminAuthInterceptor 在 /api/fortune/generate 上校验）。
+   * 之前它是完全公开的：任何人循环调用就能往 fortune_daily 里灌任意日期的数据。
+   * 另外日期被限制在前后 7 天内。
    */
   @PostMapping("/generate")
   public Result<Integer> generate(@RequestParam(required = false)
                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
     LocalDate target = (date == null) ? LocalDate.now() : date;
+    checkWithinWindow(target, MAX_GENERATE_WINDOW_DAYS);
     return Result.success(fortuneService.generateForDate(target));
+  }
+
+  private static void checkWithinWindow(LocalDate date, int windowDays) {
+    LocalDate today = LocalDate.now();
+    if (date.isBefore(today.minusDays(windowDays)) || date.isAfter(today.plusDays(windowDays))) {
+      throw new IllegalArgumentException(
+          "日期超出允许范围（前后 " + windowDays + " 天）");
+    }
   }
 }

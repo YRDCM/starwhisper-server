@@ -85,16 +85,22 @@ public class MatchService {
   private final ObjectMapper objectMapper;
   private final RestClient restClient;
   private final String appKey;
+  private final ExternalCallGuard guard;
+
+  /** 外部调用闸门频道名（与运势共用 ShowAPI 配额池，但独立计数便于排查） */
+  static final String CHANNEL_SHOWAPI = "showapi-match";
 
   public MatchService(SignRepository signRepository,
                       FortuneGenerator fortuneGenerator,
                       HoroscopeCacheService cacheService,
                       ObjectMapper objectMapper,
+                      ExternalCallGuard guard,
                       @Value("${showapi.appKey:}") String appKey) {
     this.signRepository = signRepository;
     this.fortuneGenerator = fortuneGenerator;
     this.cacheService = cacheService;
     this.objectMapper = objectMapper;
+    this.guard = guard;
     this.appKey = appKey;
 
     // 超时与运势接口一致：连接 5s / 读取 15s
@@ -105,16 +111,23 @@ public class MatchService {
   }
 
   /**
-   * 配对主入口：能走 ShowAPI 就走，失败自动回退本地生成
+   * 配对主入口：能走 ShowAPI 就走，失败自动回退本地生成。
+   *
+   * 外部调用前先过闸门（{@link ExternalCallGuard}）：
+   * 每日配额用尽或上游连续失败进入冷却期时，直接走本地生成，
+   * 不让每个用户请求都去撞一次 15 秒超时。
    */
   public MatchVO match(String query1, String query2, int gender1, int gender2) {
     Sign star1 = resolveSign(query1);
     Sign star2 = resolveSign(query2);
 
-    if (StringUtils.hasText(appKey)) {
+    if (StringUtils.hasText(appKey) && guard.allow(CHANNEL_SHOWAPI)) {
       try {
-        return fetchFromShowapi(star1, star2, gender1, gender2);
+        MatchVO vo = fetchFromShowapi(star1, star2, gender1, gender2);
+        guard.recordSuccess(CHANNEL_SHOWAPI);
+        return vo;
       } catch (Exception e) {
+        guard.recordFailure(CHANNEL_SHOWAPI);
         log.warn("ShowAPI 配对接口调用失败，回退本地生成：{} vs {}, 原因={}",
             star1.getNameEn(), star2.getNameEn(), e.getMessage());
       }

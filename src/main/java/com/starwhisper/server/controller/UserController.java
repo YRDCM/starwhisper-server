@@ -26,10 +26,16 @@ import java.util.Map;
 @RequestMapping("/api/user")
 public class UserController {
 
+  /** 与 app_user.nickname 的 varchar(64) 对齐 */
+  private static final int MAX_NICKNAME_LEN = 32;
+  /** 与 app_user.avatar_url 的 varchar(512) 对齐 */
+  private static final int MAX_AVATAR_LEN = 512;
+  /** 历史记录 type 允许的取值 */
+  private static final java.util.Set<String> ALLOWED_HISTORY_TYPES = java.util.Set.of("TAROT", "BAGUA");
+
   private final AppUserRepository appUserRepository;
   private final UserHistoryRepository userHistoryRepository;
 
-  // 构造注入
   public UserController(AppUserRepository appUserRepository, UserHistoryRepository userHistoryRepository) {
     this.appUserRepository = appUserRepository;
     this.userHistoryRepository = userHistoryRepository;
@@ -55,24 +61,46 @@ public class UserController {
   /**
    * 更新资料：POST /api/user/profile，body {"nickname": "...", "avatarUrl": "..."}
    * 只更新传了的非空字段；昵称全站唯一，撞名直接报错（用户主动改昵称要给明确反馈，不静默加后缀）
+   *
+   * 之前没有长度校验：昵称超过 64 字符会直接撞数据库列长度抛 500。
    */
   @PostMapping("/profile")
   public Result<Map<String, Object>> profile(HttpServletRequest request,
-                                             @RequestBody Map<String, String> body) {
+                                             @RequestBody(required = false) Map<String, String> body) {
     AppUser user = CurrentUser.get(request);
-    String nickname = body.get("nickname");
-    String avatarUrl = body.get("avatarUrl");
+    Map<String, String> payload = (body == null) ? Map.of() : body;
+
+    String nickname = payload.get("nickname");
+    String avatarUrl = payload.get("avatarUrl");
+
     if (StringUtils.hasText(nickname)) {
       String trimmed = nickname.trim();
-      // 重名校验：别的用户已占用就拒绝（排除自己）
+      if (trimmed.length() > MAX_NICKNAME_LEN) {
+        throw new IllegalArgumentException("昵称最多 " + MAX_NICKNAME_LEN + " 个字");
+      }
+      if (containsControlChar(trimmed)) {
+        throw new IllegalArgumentException("昵称包含不支持的字符");
+      }
+      // 重名校验：别的用户已占用就拒绝（排除自己）；并发下由 DB 唯一索引兜底
       appUserRepository.findByNickname(trimmed)
           .filter(other -> !other.getId().equals(user.getId()))
-          .ifPresent(other -> { throw new IllegalArgumentException("昵称已被使用，换一个试试"); });
+          .ifPresent(other -> {
+            throw new IllegalArgumentException("昵称已被使用，换一个试试");
+          });
       user.setNickname(trimmed);
     }
+
     if (StringUtils.hasText(avatarUrl)) {
-      user.setAvatarUrl(avatarUrl.trim());
+      String trimmed = avatarUrl.trim();
+      if (trimmed.length() > MAX_AVATAR_LEN) {
+        throw new IllegalArgumentException("头像地址过长");
+      }
+      if (!trimmed.startsWith("https://") && !trimmed.startsWith("http://")) {
+        throw new IllegalArgumentException("头像地址必须以 http(s):// 开头");
+      }
+      user.setAvatarUrl(trimmed);
     }
+
     appUserRepository.save(user);
 
     return Result.success(Map.of(
@@ -84,15 +112,28 @@ public class UserController {
 
   /**
    * 占卜历史：GET /api/user/history?type=TAROT
-   * type 可选（TAROT / BAGUA），最新在前，最多 50 条
+   * type 可选（TAROT / BAGUA），最新在前，最多 50 条。
+   * 非白名单值按"全部"处理，避免任意字符串拼进查询。
    */
   @GetMapping("/history")
   public Result<List<UserHistory>> history(HttpServletRequest request,
                                            @RequestParam(required = false) String type) {
     AppUser user = CurrentUser.get(request);
-    List<UserHistory> list = StringUtils.hasText(type)
-        ? userHistoryRepository.findTop50ByUserIdAndTypeOrderByCreatedAtDesc(user.getId(), type.trim().toUpperCase())
+    String normalized = StringUtils.hasText(type) ? type.trim().toUpperCase() : null;
+    List<UserHistory> list = (normalized != null && ALLOWED_HISTORY_TYPES.contains(normalized))
+        ? userHistoryRepository.findTop50ByUserIdAndTypeOrderByCreatedAtDesc(user.getId(), normalized)
         : userHistoryRepository.findTop50ByUserIdOrderByCreatedAtDesc(user.getId());
     return Result.success(list);
+  }
+
+  /** 控制字符（含换行、制表、零宽字符）一律拒绝，避免昵称把 UI 撑坏或在海报上错位 */
+  private static boolean containsControlChar(String text) {
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (Character.isISOControl(c) || c == '\u200B' || c == '\u200C' || c == '\u200D') {
+        return true;
+      }
+    }
+    return false;
   }
 }

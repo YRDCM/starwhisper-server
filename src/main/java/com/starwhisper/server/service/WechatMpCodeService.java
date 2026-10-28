@@ -41,7 +41,9 @@ public class WechatMpCodeService {
             cached = Files.readAllBytes(codeFile);
             log.info("官方小程序码已加载：{}（{} 字节）", codeFile, cached.length);
           } catch (IOException e) {
-            throw new IllegalStateException("小程序码文件不可读：" + codeFile);
+            // 绝对路径只进日志，不回传给客户端（避免泄露服务器目录结构）
+            log.warn("小程序码文件不可读：{}", codeFile, e);
+            throw new IllegalStateException("小程序码暂时不可用");
           }
         }
         bytes = cached;

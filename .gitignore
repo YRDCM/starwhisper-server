@@ -34,3 +34,7 @@ build/
 
 # 本地密钥文件，绝不入库
 application-local.properties
+
+# 运行日志（logback-spring.xml 里按天滚动的输出目录）
+logs/
+*.log

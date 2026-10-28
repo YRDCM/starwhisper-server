@@ -81,7 +81,12 @@ public class BaguaController {
    * 限额与塔罗解牌共用（每 IP 3 次/天 + 全站 100 次/天），响应结构同为 { summary, detail }
    */
   @PostMapping("/ai-reading")
-  public Result<KimiTarotClient.Reading> aiReading(@RequestBody AiRequest body, HttpServletRequest request) {
+  public Result<KimiTarotClient.Reading> aiReading(@RequestBody(required = false) AiRequest body,
+                                                   HttpServletRequest request) {
+    if (body == null || body.primarySeq() == null) {
+      // 之前这里直接 body.primarySeq()，请求体为空时会抛 NPE 变成 500
+      throw new IllegalArgumentException("缺少参数：primarySeq（本卦卦序 1-64）");
+    }
     return Result.success(hexagramAi.read(body.primarySeq(), body.changedSeq(), body.changingLines(),
         body.question(), request.getRemoteAddr()));
   }

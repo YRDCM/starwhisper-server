@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  日志配置：
+  · 控制台给人看
+  · 文件按天 + 按大小滚动，保留 14 天，总量封顶 2GB（之前没有滚动，磁盘会被写满）
+  · 每行带 traceId（由 TraceIdFilter 写入 MDC），可以把一次请求串起来查
+-->
+<configuration>
+
+  <property name="LOG_DIR" value="${LOG_DIR:-logs}"/>
+  <property name="PATTERN"
+            value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{traceId:-}] %logger{40} - %msg%n"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>${PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_DIR}/starwhisper.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_DIR}/starwhisper.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+      <maxFileSize>50MB</maxFileSize>
+      <maxHistory>14</maxHistory>
+      <totalSizeCap>2GB</totalSizeCap>
+    </rollingPolicy>
+    <encoder>
+      <pattern>${PATTERN}</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- 自己的代码开到 INFO；框架噪音压到 WARN，避免一条请求刷几十行 -->
+  <logger name="com.starwhisper" level="INFO"/>
+  <logger name="org.hibernate.SQL" level="WARN"/>
+  <logger name="org.springframework.web" level="WARN"/>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="FILE"/>
+  </root>
+
+</configuration>

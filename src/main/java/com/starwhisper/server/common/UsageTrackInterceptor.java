@@ -14,7 +14,14 @@ import java.time.LocalDateTime;
 
 /**
  * 使用埋点拦截器：统一记录关键功能接口的调用（含游客）。
- * 只记 2xx 成功请求；后台/登录接口不记。
+ *
+ * 只记「真正成功」的调用。注意成功与否不能看 HTTP status——
+ * 后端所有响应都是 HTTP 200 + body.code，业务失败也是 200。
+ * 所以判定依据是：
+ *   1) 响应状态码 >= 400（拦截器层直接拒绝的，如 403）
+ *   2) 抛了异常
+ *   3) GlobalExceptionHandler 打了 WebAttributes.BUSINESS_ERROR 标记
+ *
  * 注册顺序在 AuthInterceptor 之后（CurrentUser 已挂到 request 上）。
  */
 @Component
@@ -30,7 +37,7 @@ public class UsageTrackInterceptor implements HandlerInterceptor {
 
   /**
    * URI + 方法 → 板块名。只映射"用户主动使用功能"的接口，返回 null 表示不记录。
-   * 提出来做成纯静态方法，方便单测覆盖
+   * 提出来做成纯静态方法，方便单测覆盖。
    */
   public static String moduleOf(String method, String uri) {
     if (uri == null) return null;
@@ -47,10 +54,18 @@ public class UsageTrackInterceptor implements HandlerInterceptor {
     return null;
   }
 
+  /** 这次请求是否算"成功使用" */
+  static boolean succeeded(HttpServletRequest request, HttpServletResponse response, Exception ex) {
+    if (ex != null) return false;
+    if (response.getStatus() >= 400) return false;
+    Object failed = request.getAttribute(WebAttributes.BUSINESS_ERROR);
+    return !Boolean.TRUE.equals(failed);
+  }
+
   @Override
   public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
     try {
-      if (response.getStatus() >= 400) return;
+      if (!succeeded(request, response, ex)) return;
       String module = moduleOf(request.getMethod(), request.getRequestURI());
       if (module == null) return;
       AppUser user = CurrentUser.get(request);

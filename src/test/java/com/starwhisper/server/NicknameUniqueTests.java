@@ -17,7 +17,8 @@ import static org.mockito.Mockito.*;
 class NicknameUniqueTests {
 
   private AuthService newService(AppUserRepository repo) {
-    return new AuthService(repo, mock(UserSessionRepository.class), "", "", true);
+    // 第 6 个参数是 dev-login 的校验令牌；测试只用 uniqueNickname，与它无关
+    return new AuthService(repo, mock(UserSessionRepository.class), "", "", true, "test-token");
   }
 
   @Test

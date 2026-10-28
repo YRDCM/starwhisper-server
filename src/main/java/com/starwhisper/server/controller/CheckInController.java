@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -22,7 +21,6 @@ public class CheckInController {
 
   private final CheckInService checkInService;
 
-  // 构造注入
   public CheckInController(CheckInService checkInService) {
     this.checkInService = checkInService;
   }
@@ -52,27 +50,25 @@ public class CheckInController {
   }
 
   /**
-   * 打卡汇总（v4 契约）：GET /api/checkin/summary?openid=xxx
-   * 已登录（带 token）优先按 token 身份查；否则按 openid 参数查（游客/旧契约保留）
-   * —— 前端曾把用户 id 当 openid 兜底传上来，导致查不到用户全显示 0
+   * 打卡汇总：GET /api/checkin/summary
+   *
+   * ⚠️ 已移除 openid 入参。原先"未登录时按 openid 查任意用户"是越权读
+   * （任何人都能拿别人的 openid 读到他的打卡记录与勋章）。
+   * 现在：登录 → 按 token 身份查；未登录 → 返回全零的游客视图。
    */
   @GetMapping("/summary")
-  public Result<Map<String, Object>> summary(@RequestParam(required = false) String openid,
-                                             HttpServletRequest request) {
+  public Result<Map<String, Object>> summary(HttpServletRequest request) {
     AppUser user = CurrentUser.get(request);
     if (user != null) {
       return Result.ok0(checkInService.summaryByUserId(user.getId()));
     }
-    return Result.ok0(checkInService.summary(openid));
+    return Result.ok0(checkInService.guestSummary());
   }
 
   /**
    * 未登录的统一返回：和拦截器对 /api/user/** 的处理保持同一个形状
    */
   private Result<Map<String, Object>> needLogin() {
-    Result<Map<String, Object>> result = new Result<>();
-    result.setCode(401);
-    result.setMessage("请先登录");
-    return result;
+    return Result.error(401, "请先登录");
   }
 }
