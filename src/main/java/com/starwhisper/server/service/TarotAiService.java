@@ -47,7 +47,16 @@ public class TarotAiService {
     return id;
   }
 
+  /** 兼容旧签名：无登录身份（按游客额度计） */
   public KimiTarotClient.Reading read(String drawId, String question, String ip) {
+    return read(drawId, question, ip, null);
+  }
+
+  /**
+   * @param userId 登录用户 id；为 null 表示游客。
+   *               登录用户走独立额度（比游客多），这是登录的实际权益之一。
+   */
+  public KimiTarotClient.Reading read(String drawId, String question, String ip, Long userId) {
     if (drawId == null || drawId.length() > 64 || question == null || question.length() > 300)
       throw new IllegalArgumentException("请使用当前牌阵，问题不超过300字");
     final Session session;
@@ -62,7 +71,7 @@ public class TarotAiService {
       }
       if (session.running) throw new IllegalStateException("这组牌正在解读，请稍候再查看");
       if (active >= 2) throw new IllegalStateException("AI 正在忙，请稍后再试");
-      quota.consume(ip);
+      quota.consume(ip, userId);
       active++;
       session.running = true;
       session.question = question.strip();

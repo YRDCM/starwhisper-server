@@ -53,8 +53,17 @@ public class HexagramAiService {
     this(client, new AiDailyQuota(perIpLimit, globalLimit), repository);
   }
 
+  /** 兼容旧签名：无登录身份（按游客额度计） */
   public KimiTarotClient.Reading read(Integer primarySeq, Integer changedSeq, List<Integer> changingLines,
                                       String question, String ip) {
+    return read(primarySeq, changedSeq, changingLines, question, ip, null);
+  }
+
+  /**
+   * @param userId 登录用户 id；为 null 表示游客。登录用户走独立额度（比游客多）
+   */
+  public KimiTarotClient.Reading read(Integer primarySeq, Integer changedSeq, List<Integer> changingLines,
+                                      String question, String ip, Long userId) {
     // 参数校验在前：非法请求不占额度、不调供应商
     if (question == null || question.length() > 300)
       throw new IllegalArgumentException("请提供本次卦面，问题不超过300字");
@@ -89,7 +98,7 @@ public class HexagramAiService {
       }
       if (active >= 2) throw new IllegalStateException("AI 正在忙，请稍后再试");
       if (runningKeys.contains(key)) throw new IllegalStateException("这一卦正在解读，请稍候再查看");
-      quota.consume(ip);
+      quota.consume(ip, userId);
       active++;
       runningKeys.add(key);
     }

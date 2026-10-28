@@ -96,8 +96,14 @@ public class TarotController {
   public record AiRequest(String drawId, String question) {}
 
   @PostMapping("/ai-reading")
-  public Result<KimiTarotClient.Reading> aiReading(@RequestBody AiRequest body, HttpServletRequest request) {
-    return Result.success(ai.read(body.drawId(), body.question(), request.getRemoteAddr()));
+  public Result<KimiTarotClient.Reading> aiReading(@RequestBody(required = false) AiRequest body,
+                                                   HttpServletRequest request) {
+    if (body == null) {
+      throw new IllegalArgumentException("缺少请求体（drawId 与 question）");
+    }
+    AppUser user = CurrentUser.get(request);
+    Long userId = (user == null) ? null : user.getId();
+    return Result.success(ai.read(body.drawId(), body.question(), request.getRemoteAddr(), userId));
   }
 
   /**

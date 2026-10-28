@@ -5,6 +5,7 @@ import com.starwhisper.server.common.Result;
 import com.starwhisper.server.entity.AppUser;
 import com.starwhisper.server.entity.UserHistory;
 import com.starwhisper.server.repository.AppUserRepository;
+import com.starwhisper.server.repository.SignRepository;
 import com.starwhisper.server.repository.UserHistoryRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.util.StringUtils;
@@ -35,10 +36,14 @@ public class UserController {
 
   private final AppUserRepository appUserRepository;
   private final UserHistoryRepository userHistoryRepository;
+  private final SignRepository signRepository;
 
-  public UserController(AppUserRepository appUserRepository, UserHistoryRepository userHistoryRepository) {
+  public UserController(AppUserRepository appUserRepository,
+                        UserHistoryRepository userHistoryRepository,
+                        SignRepository signRepository) {
     this.appUserRepository = appUserRepository;
     this.userHistoryRepository = userHistoryRepository;
+    this.signRepository = signRepository;
   }
 
   /**
@@ -51,6 +56,7 @@ public class UserController {
     data.put("id", user.getId());
     data.put("nickname", user.getNickname());
     data.put("avatarUrl", user.getAvatarUrl());
+    data.put("signNameEn", user.getSignNameEn());
     data.put("createdAt", user.getCreatedAt());
     data.put("historyCount", userHistoryRepository.countByUserId(user.getId()));
     data.put("tarotCount", userHistoryRepository.countByUserIdAndType(user.getId(), "TAROT"));
@@ -72,6 +78,24 @@ public class UserController {
 
     String nickname = payload.get("nickname");
     String avatarUrl = payload.get("avatarUrl");
+    String signNameEn = payload.get("signNameEn");
+
+    // "我的星座"：游客只能存在本地，登录后存到服务端 —— 换手机、清缓存都不会丢。
+    // 这是「登录到底有什么用」最直观的一条：你的星运档案跟着账号走。
+    if (signNameEn != null) {
+      String normalized = signNameEn.trim();
+      if (normalized.isEmpty()) {
+        user.setSignNameEn(null);
+      } else {
+        if (normalized.length() > 16) {
+          throw new IllegalArgumentException("星座标识不合法");
+        }
+        String canonical = signRepository.findByNameEnIgnoreCase(normalized)
+            .map(sign -> sign.getNameEn())
+            .orElseThrow(() -> new IllegalArgumentException("不认识的星座：" + normalized));
+        user.setSignNameEn(canonical);
+      }
+    }
 
     if (StringUtils.hasText(nickname)) {
       String trimmed = nickname.trim();
@@ -106,7 +130,8 @@ public class UserController {
     return Result.success(Map.of(
         "id", user.getId(),
         "nickname", user.getNickname(),
-        "avatarUrl", user.getAvatarUrl() == null ? "" : user.getAvatarUrl()
+        "avatarUrl", user.getAvatarUrl() == null ? "" : user.getAvatarUrl(),
+        "signNameEn", user.getSignNameEn() == null ? "" : user.getSignNameEn()
     ));
   }
 

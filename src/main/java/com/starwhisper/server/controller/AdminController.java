@@ -33,13 +33,16 @@ public class AdminController {
   private final AdminStatsService adminStatsService;
   private final AdminUserService adminUserService;
   private final AppConfigService appConfigService;
+  private final com.starwhisper.server.repository.FeedbackRepository feedbackRepository;
 
   public AdminController(AdminStatsService adminStatsService,
                          AdminUserService adminUserService,
-                         AppConfigService appConfigService) {
+                         AppConfigService appConfigService,
+                         com.starwhisper.server.repository.FeedbackRepository feedbackRepository) {
     this.adminStatsService = adminStatsService;
     this.adminUserService = adminUserService;
     this.appConfigService = appConfigService;
+    this.feedbackRepository = feedbackRepository;
   }
 
   /* ===== 模块一：数据总览 ===== */
@@ -120,6 +123,37 @@ public class AdminController {
     } catch (IllegalArgumentException e) {
       return badRequest(e.getMessage());
     }
+  }
+
+  /* ===== 模块四：用户反馈 ===== */
+
+  /**
+   * 反馈列表（最新在前）：GET /api/admin/feedback?page=0&size=20
+   * 游客提交的也在里面（user_id 为空）
+   */
+  @GetMapping("/feedback")
+  public ResponseEntity<Result<Map<String, Object>>> feedback(
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    int safePage = Math.max(0, page);
+    int safeSize = Math.min(Math.max(1, size), 100);
+    var result = feedbackRepository.findAllByOrderByCreatedAtDesc(
+        org.springframework.data.domain.PageRequest.of(safePage, safeSize));
+    java.util.List<Map<String, Object>> items = new java.util.ArrayList<>();
+    for (var fb : result.getContent()) {
+      Map<String, Object> item = new java.util.LinkedHashMap<>();
+      item.put("id", fb.getId());
+      item.put("userId", fb.getUserId());
+      item.put("page", fb.getPage());
+      item.put("content", fb.getContent());
+      item.put("contact", fb.getContact());
+      item.put("createdAt", fb.getCreatedAt());
+      items.add(item);
+    }
+    Map<String, Object> data = new java.util.LinkedHashMap<>();
+    data.put("total", result.getTotalElements());
+    data.put("items", items);
+    return ResponseEntity.ok(Result.ok0(data));
   }
 
   /* ===== 小工具 ===== */

@@ -87,8 +87,10 @@ public class BaguaController {
       // 之前这里直接 body.primarySeq()，请求体为空时会抛 NPE 变成 500
       throw new IllegalArgumentException("缺少参数：primarySeq（本卦卦序 1-64）");
     }
+    AppUser user = CurrentUser.get(request);
+    Long userId = (user == null) ? null : user.getId();
     return Result.success(hexagramAi.read(body.primarySeq(), body.changedSeq(), body.changingLines(),
-        body.question(), request.getRemoteAddr()));
+        body.question(), request.getRemoteAddr(), userId));
   }
 
   /**
