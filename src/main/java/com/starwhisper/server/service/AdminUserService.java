@@ -182,8 +182,8 @@ public class AdminUserService {
     modules.add(usageItem("checkin", "每日打卡", checkins));
     modules.add(usageItem("tarot", "塔罗抽牌", byType.getOrDefault("TAROT", 0L)));
     modules.add(usageItem("match", "星座配对", byType.getOrDefault("MATCH", 0L)));
-    modules.add(usageItem("bagua", "八卦起卦", byType.getOrDefault("BAGUA", 0L)));
-    modules.add(usageItem("hexagram", "每日一卦",
+    modules.add(usageItem("bagua", "八卦（已下线）", byType.getOrDefault("BAGUA", 0L)));
+    modules.add(usageItem("hexagram", "每日一卦（已下线）",
         byType.getOrDefault("hexagram", 0L) + byType.getOrDefault("HEXAGRAM", 0L)));
     modules.add(usageItem("fortune", "星运浏览", null)); // 未埋点
     modules.add(usageItem("ai", "AI 解读", null));       // 限额按 IP 记内存，未按用户落库

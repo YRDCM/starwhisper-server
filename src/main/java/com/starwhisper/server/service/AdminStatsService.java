@@ -126,7 +126,9 @@ public class AdminStatsService {
     LocalDateTime end = today.plusDays(1).atStartOfDay();
     String[][] modules = {
         {"fortune", "星运浏览"}, {"tarot", "塔罗抽牌"}, {"match", "星座配对"},
-        {"bagua", "八卦起卦"}, {"hexagram", "每日一卦"}, {"checkin", "每日打卡"}, {"ai", "AI 解读"}
+        // 八卦/每日一卦已按平台要求下线，这里保留计数但标注状态，避免大盘上看不出它已经不在服务
+        {"bagua", "八卦（已下线）"}, {"hexagram", "每日一卦（已下线）"},
+        {"checkin", "每日打卡"}, {"ai", "AI 解读"}
     };
     List<Map<String, Object>> list = new ArrayList<>();
     for (String[] m : modules) {
@@ -149,8 +151,9 @@ public class AdminStatsService {
     List<Map<String, Object>> list = new ArrayList<>();
     list.add(moduleItem("tarot", "塔罗抽牌", userHistoryRepository.countByType("TAROT")));
     list.add(moduleItem("match", "星座配对", userHistoryRepository.countByType("MATCH")));
-    list.add(moduleItem("bagua", "八卦起卦", userHistoryRepository.countByType("BAGUA")));
-    list.add(moduleItem("hexagram", "每日一卦", userHistoryRepository.countByType("hexagram")));
+    // 已下线板块：保留历史累计用于对照，名称标注清楚，避免误以为是现役功能
+    list.add(moduleItem("bagua", "八卦（已下线）", userHistoryRepository.countByType("BAGUA")));
+    list.add(moduleItem("hexagram", "每日一卦（已下线）", userHistoryRepository.countByType("hexagram")));
     list.add(moduleItem("checkin", "每日打卡", checkInRepository.count()));
     list.add(moduleItem("fortune", "星运浏览", null)); // 未埋点
     return list;
