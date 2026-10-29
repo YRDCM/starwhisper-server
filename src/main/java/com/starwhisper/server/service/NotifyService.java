@@ -85,8 +85,23 @@ public class NotifyService {
    * 当前用户处于 ACTIVE 状态的订阅场景列表
    */
   public List<String> activeScenes(Long userId) {
+    return scenesOf(userId, SubscribeRecord.STATUS_ACTIVE);
+  }
+
+  /**
+   * 当前用户**已经推送过、额度已消耗**的场景列表。
+   *
+   * 为什么要单独暴露：微信规则是「一次授权只推一条」，推送成功后记录变 CONSUMED。
+   * 如果只返回 ACTIVE，前端就无法区分「从没订阅过」和「刚收到推送、额度用完了」，
+   * 用户会看到「未订阅」——明明刚收到消息，像是没订上。
+   */
+  public List<String> consumedScenes(Long userId) {
+    return scenesOf(userId, SubscribeRecord.STATUS_CONSUMED);
+  }
+
+  private List<String> scenesOf(Long userId, String status) {
     return subscribeRecordRepository
-        .findByUserIdAndStatus(userId, SubscribeRecord.STATUS_ACTIVE)
+        .findByUserIdAndStatus(userId, status)
         .stream()
         .map(SubscribeRecord::getScene)
         .toList();

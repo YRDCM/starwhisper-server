@@ -54,12 +54,19 @@ public class NotifyController {
   }
 
   /**
-   * 订阅状态：GET /api/notify/status → {scenes: ["DAILY_FORTUNE", ...]}（仅 ACTIVE）
+   * 订阅状态：GET /api/notify/status
+   * → { scenes: ["DAILY_FORTUNE", ...], consumed: ["DAILY_FORTUNE", ...] }
+   *
+   * scenes   = 还有待推送额度的（ACTIVE）
+   * consumed = 已经推送过、额度用完的
+   * 两者分开是为了让前端能区分「从没订阅」和「刚推完，需要再次授权」——
+   * 后者如果也显示成「未订阅」，用户会以为推送没生效。
    */
   @GetMapping("/status")
   public Result<Map<String, Object>> status(HttpServletRequest request) {
     AppUser user = CurrentUser.get(request);
-    List<String> scenes = notifyService.activeScenes(user.getId());
-    return Result.success(Map.of("scenes", scenes));
+    return Result.success(Map.of(
+        "scenes", notifyService.activeScenes(user.getId()),
+        "consumed", notifyService.consumedScenes(user.getId())));
   }
 }
