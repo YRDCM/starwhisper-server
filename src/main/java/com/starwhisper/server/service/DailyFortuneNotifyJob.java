@@ -60,20 +60,44 @@ public class DailyFortuneNotifyJob {
   /**
    * 每天 08:00（Asia/Shanghai）推送当日运势给所有 ACTIVE 订阅用户。
    * cron 可用环境变量 APP_NOTIFY_CRON 覆盖。
+   *
+   * 注：@Scheduled 要求方法返回 void，所以这里只做委托；
+   * 真正的实现在 runDailyPush()，后台可以手动触发它来做推送联调。
    */
   @Scheduled(cron = "${app.notify-cron:0 0 8 * * *}", zone = "Asia/Shanghai")
   public void pushDailyFortune() {
+    runDailyPush();
+  }
+
+  /**
+   * 执行一次推送，返回执行结果（供后台手动触发/排查用）。
+   * 结果字段：skipped(是否跳过)、reason(跳过原因)、total、success、failed
+   */
+  public Map<String, Object> runDailyPush() {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("skipped", false);
+
     // 模板 ID 是运营在公众平台申请后回填的；没配就不做任何事，也不报错
     if (!StringUtils.hasText(dailyFortuneTemplateId)) {
       log.info("每日运势推送跳过：wx.notify.dailyFortuneTemplateId 未配置（模板 ID 请到公众平台申请后回填）");
-      return;
+      result.put("skipped", true);
+      result.put("reason", "模板 ID 未配置");
+      result.put("total", 0);
+      result.put("success", 0);
+      result.put("failed", 0);
+      return result;
     }
 
     List<SubscribeRecord> records = subscribeRecordRepository
         .findBySceneAndStatus(SubscribeRecord.SCENE_DAILY_FORTUNE, SubscribeRecord.STATUS_ACTIVE);
     if (records.isEmpty()) {
       log.info("每日运势推送：暂无待推送订阅");
-      return;
+      result.put("skipped", true);
+      result.put("reason", "暂无待推送订阅（用户还没授权，或额度已用完）");
+      result.put("total", 0);
+      result.put("success", 0);
+      result.put("failed", 0);
+      return result;
     }
 
     String accessToken;
@@ -82,16 +106,25 @@ public class DailyFortuneNotifyJob {
     } catch (Exception e) {
       // token 拿不到（未配置 appid/secret、微信接口异常）→ 本轮整体放弃，不消耗任何订阅额度
       log.warn("每日运势推送中止：获取 access_token 失败，{}", e.getMessage());
-      return;
+      result.put("skipped", true);
+      result.put("reason", "获取 access_token 失败：" + e.getMessage());
+      result.put("total", records.size());
+      result.put("success", 0);
+      result.put("failed", 0);
+      return result;
     }
 
     int success = 0;
     int failed = 0;
+    int expired = 0;
     LocalDate today = LocalDate.now();
     for (SubscribeRecord record : records) {
       try {
-        if (pushOne(record, accessToken, today)) {
+        int r = pushOne(record, accessToken, today);
+        if (r == PUSH_OK) {
           success++;
+        } else if (r == PUSH_EXPIRED) {
+          expired++;
         } else {
           failed++;
         }
@@ -101,36 +134,62 @@ public class DailyFortuneNotifyJob {
         log.warn("每日运势推送失败：userId={}, 原因={}", record.getUserId(), e.getMessage());
       }
     }
-    log.info("每日运势推送完成：成功 {}，失败 {}，共 {}", success, failed, records.size());
+    log.info("每日运势推送完成：成功 {}，失效 {}，失败 {}，共 {}", success, expired, failed, records.size());
+    result.put("total", records.size());
+    result.put("success", success);
+    result.put("expired", expired);
+    result.put("failed", failed);
+    return result;
   }
+
+  private static final int PUSH_OK = 1;
+  private static final int PUSH_FAILED = 0;
+  private static final int PUSH_EXPIRED = 2;
 
   /**
    * 推送单个用户。
-   * 成功 → 订阅记录置 CONSUMED（一次授权一次推送，额度已用完）；
-   * 失败/缺数据 → 保持 ACTIVE，下轮再试（不会消耗用户的授权额度）。
+   *
+   * 微信侧的错误分两类，处理方式必须不同：
+   * · 43101（用户没有有效授权）/ 40003（openid 无效）→ **重试永远不会成功**，
+   *   把记录置为 CANCELLED，让前端能重新引导授权；否则这个任务每天早上都会
+   *   对着同一条死记录失败一次，日志里全是噪音。
+   * · 其它错误（网络抖动、供应商异常）→ 保持 ACTIVE，下次再试，不消耗用户额度。
    */
-  private boolean pushOne(SubscribeRecord record, String accessToken, LocalDate today) {
+  private int pushOne(SubscribeRecord record, String accessToken, LocalDate today) {
     AppUser user = appUserRepository.findById(record.getUserId()).orElse(null);
     if (user == null || !StringUtils.hasText(user.getOpenid())) {
       log.warn("每日运势推送跳过：userId={} 用户不存在或无 openid", record.getUserId());
-      return false;
+      return PUSH_FAILED;
     }
     if (!StringUtils.hasText(user.getSignNameEn())) {
       // 用户还没选过星座，不知道推什么内容；保持 ACTIVE 等前端补登
       log.warn("每日运势推送跳过：userId={} 未设置星座", record.getUserId());
-      return false;
+      return PUSH_FAILED;
     }
 
     FortuneVO fortune = fortuneService.getFortune(user.getSignNameEn(), today);
-    boolean sent = messageClient.send(accessToken, user.getOpenid(), dailyFortuneTemplateId,
+    var sendResult = messageClient.sendWithResult(accessToken, user.getOpenid(), dailyFortuneTemplateId,
         TARGET_PAGE, buildTemplateData(fortune));
-    if (sent) {
+
+    if (sendResult.ok()) {
       // 微信平台规则：一次授权只能发一次，发送成功即消耗本次订阅额度
       record.setStatus(SubscribeRecord.STATUS_CONSUMED);
       record.setUpdatedAt(LocalDateTime.now());
       subscribeRecordRepository.save(record);
+      return PUSH_OK;
     }
-    return sent;
+
+    if (sendResult.isUserRefused() || sendResult.isBadUser()) {
+      // 授权已失效：不再重试，置为 CANCELLED，前端会显示「未订阅 · 点击开启」引导重新授权
+      record.setStatus(SubscribeRecord.STATUS_CANCELLED);
+      record.setUpdatedAt(LocalDateTime.now());
+      subscribeRecordRepository.save(record);
+      log.info("订阅已失效并标记取消：userId={}, errcode={}（用户需要重新授权）",
+          record.getUserId(), sendResult.errcode());
+      return PUSH_EXPIRED;
+    }
+
+    return PUSH_FAILED;
   }
 
   /**
@@ -148,7 +207,7 @@ public class DailyFortuneNotifyJob {
     if (fortune.getLuckyColor() != null) keyword.append(" ").append(fortune.getLuckyColor());
     data.put("thing1", Map.of("value", truncate(keyword.length() == 0 ? "查看今日运势" : keyword.toString(), 20)));
     String summary = fortune.getSummary() == null ? "查看今日运势详情" : fortune.getSummary();
-    data.put("thing2", Map.of("value", truncate(summary, 20)));
+    data.put("thing2", Map.of("value", shortenSentence(summary, 20)));
     LocalDate date = fortune.getFortuneDate() == null ? LocalDate.now() : fortune.getFortuneDate();
     data.put("time3", Map.of("value", date.getYear() + "年" + date.getMonthValue() + "月" + date.getDayOfMonth() + "日"));
     return data;
@@ -156,5 +215,24 @@ public class DailyFortuneNotifyJob {
 
   private static String truncate(String text, int max) {
     return text.length() <= max ? text : text.substring(0, max - 1) + "…";
+  }
+
+  /**
+   * 截断成一句读得通的话：thing 类型上限 20 字，直接硬切会停在半个词上，
+   * 也常常留下一个悬空的逗号。这里切完之后去掉尾部标点，再补省略号。
+   */
+  static String shortenSentence(String text, int max) {
+    if (text == null || text.isEmpty()) {
+      return "";
+    }
+    if (text.length() <= max) {
+      return text;
+    }
+    String cut = text.substring(0, max - 1);
+    // 末尾如果是标点，去掉它再补省略号，避免出现「……，…」这种别扭的收尾
+    while (!cut.isEmpty() && "，、；：,;:".indexOf(cut.charAt(cut.length() - 1)) >= 0) {
+      cut = cut.substring(0, cut.length() - 1);
+    }
+    return cut + "…";
   }
 }

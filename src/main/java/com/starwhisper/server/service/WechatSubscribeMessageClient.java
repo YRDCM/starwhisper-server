@@ -39,16 +39,37 @@ public class WechatSubscribeMessageClient {
   }
 
   /**
-   * 发送一条订阅消息
+   * 发送结果。调用方需要知道失败**原因**：
+   * 43101（用户没有有效授权）应该停止重试，而网络抖动应该保留额度下次再试。
+   */
+  public record SendResult(boolean ok, int errcode, String errmsg) {
+    /** 用户没有有效授权（没点允许 / 额度已用完）——重试永远不会成功 */
+    public boolean isUserRefused() {
+      return errcode == 43101;
+    }
+
+    /** openid 无效或不属于本小程序——数据问题，同样不该重试 */
+    public boolean isBadUser() {
+      return errcode == 40003 || errcode == 40001;
+    }
+  }
+
+  /** 兼容旧调用：只关心成功与否 */
+  public boolean send(String accessToken, String openid, String templateId, String page, Map<String, Object> data) {
+    return sendWithResult(accessToken, openid, templateId, page, data).ok();
+  }
+
+  /**
+   * 发送一条订阅消息，并返回微信的原始结果
    *
    * @param accessToken 微信 access_token（由 WechatAccessTokenManager 提供）
    * @param openid      接收者 openid
    * @param templateId  订阅消息模板 ID（公众平台申请）
    * @param page        点击消息跳转的小程序页面路径，可空
    * @param data        模板字段，key 必须与模板定义一致（如 thing1/phrase2），值形如 {"value": "..."}
-   * @return true=发送成功；false=微信返回了错误码（已记日志，调用方自行决定是否重试）
    */
-  public boolean send(String accessToken, String openid, String templateId, String page, Map<String, Object> data) {
+  public SendResult sendWithResult(String accessToken, String openid, String templateId, String page,
+                                   Map<String, Object> data) {
     Map<String, Object> payload = new java.util.LinkedHashMap<>();
     payload.put("touser", openid);
     payload.put("template_id", templateId);
@@ -72,7 +93,7 @@ public class WechatSubscribeMessageClient {
           .body(String.class);
     } catch (Exception e) {
       log.warn("订阅消息发送请求异常：openid={}, 原因={}", openid, e.getMessage());
-      return false;
+      return new SendResult(false, -1, e.getMessage());
     }
 
     Map<String, Object> response;
@@ -81,16 +102,22 @@ public class WechatSubscribeMessageClient {
       });
     } catch (Exception e) {
       log.warn("订阅消息发送返回无法解析：openid={}", openid);
-      return false;
+      return new SendResult(false, -1, "返回无法解析");
     }
     // 成功：{"errcode":0,"errmsg":"ok"}；失败形如 {"errcode":43101,"errmsg":"user refuse to accept the msg"}
-    Object errcode = response == null ? null : response.get("errcode");
-    boolean ok = errcode != null && "0".equals(String.valueOf(errcode));
-    if (!ok) {
-      // errcode/errmsg 不含密钥，可安全记录；43101 通常是授权次数已用完
-      log.warn("订阅消息发送失败：openid={}, errcode={}, errmsg={}", openid, errcode,
-          response == null ? "无响应" : response.get("errmsg"));
+    Object errcodeObj = response == null ? null : response.get("errcode");
+    String errmsg = response == null ? "无响应" : String.valueOf(response.get("errmsg"));
+    int errcode;
+    try {
+      errcode = errcodeObj == null ? -1 : Integer.parseInt(String.valueOf(errcodeObj));
+    } catch (NumberFormatException e) {
+      errcode = -1;
     }
-    return ok;
+    boolean ok = errcode == 0;
+    if (!ok) {
+      // errcode/errmsg 不含密钥，可安全记录
+      log.warn("订阅消息发送失败：openid={}, errcode={}, errmsg={}", openid, errcode, errmsg);
+    }
+    return new SendResult(ok, errcode, errmsg);
   }
 }

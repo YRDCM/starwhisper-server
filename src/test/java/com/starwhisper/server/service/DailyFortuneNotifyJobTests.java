@@ -64,8 +64,8 @@ class DailyFortuneNotifyJobTests {
     when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L, "aries")));
     FortuneVO fortune = mock(FortuneVO.class);
     when(fortuneService.getFortune(eq("aries"), any(LocalDate.class))).thenReturn(fortune);
-    when(messageClient.send(eq("fake_token"), eq("openid_1"), eq("tmpl_1"), any(), any()))
-        .thenReturn(true);
+    when(messageClient.sendWithResult(eq("fake_token"), eq("openid_1"), eq("tmpl_1"), any(), any()))
+        .thenReturn(new WechatSubscribeMessageClient.SendResult(true, 0, "ok"));
 
     job("tmpl_1").pushDailyFortune();
 
@@ -85,7 +85,8 @@ class DailyFortuneNotifyJobTests {
     when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L, "aries")));
     when(fortuneService.getFortune(eq("leo"), any())).thenThrow(new RuntimeException("运势取数炸了"));
     when(fortuneService.getFortune(eq("aries"), any())).thenReturn(mock(FortuneVO.class));
-    when(messageClient.send(any(), eq("openid_1"), any(), any(), any())).thenReturn(true);
+    when(messageClient.sendWithResult(any(), eq("openid_1"), any(), any(), any()))
+        .thenReturn(new WechatSubscribeMessageClient.SendResult(true, 0, "ok"));
 
     job("tmpl_1").pushDailyFortune();
 
@@ -101,7 +102,9 @@ class DailyFortuneNotifyJobTests {
     when(tokenManager.getAccessToken()).thenReturn("fake_token");
     when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L, "aries")));
     when(fortuneService.getFortune(eq("aries"), any())).thenReturn(mock(FortuneVO.class));
-    when(messageClient.send(any(), any(), any(), any(), any())).thenReturn(false); // 微信返回错误码
+    // 网络/供应商类错误（非 43101/40003）：保持 ACTIVE，下轮重试
+    when(messageClient.sendWithResult(any(), any(), any(), any(), any()))
+        .thenReturn(new WechatSubscribeMessageClient.SendResult(false, -1, "network"));
 
     job("tmpl_1").pushDailyFortune();
 
@@ -132,6 +135,29 @@ class DailyFortuneNotifyJobTests {
     job("tmpl_1").pushDailyFortune(); // 不抛异常
 
     verifyNoInteractions(messageClient, fortuneService);
+  }
+
+  @Test
+  void 用户没有有效授权时置为取消而不是无限重试() {
+    // 真实踩到过：库里 ACTIVE，但用户从没真正点过「允许」，微信返回 43101。
+    // 这种情况重试永远不会成功，必须置为 CANCELLED，否则每天早上的定时任务
+    // 都会对着同一条死记录失败一次，日志全是噪音。
+    SubscribeRecord record = activeRecord(1L);
+    when(subscribeRepo.findBySceneAndStatus("DAILY_FORTUNE", SubscribeRecord.STATUS_ACTIVE))
+        .thenReturn(List.of(record));
+    when(tokenManager.getAccessToken()).thenReturn("fake_token");
+    when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L, "aries")));
+    when(fortuneService.getFortune(eq("aries"), any())).thenReturn(mock(FortuneVO.class));
+    when(messageClient.sendWithResult(any(), any(), any(), any(), any()))
+        .thenReturn(new WechatSubscribeMessageClient.SendResult(false, 43101, "user refuse to accept the msg"));
+
+    Map<String, Object> result = job("tmpl_1").runDailyPush();
+
+    assertEquals(SubscribeRecord.STATUS_CANCELLED, record.getStatus(), "43101 应标记取消，不再重试");
+    assertEquals(0, result.get("success"));
+    assertEquals(1, result.get("expired"));
+    assertEquals(0, result.get("failed"));
+    verify(subscribeRepo).save(record);
   }
 
   @Test

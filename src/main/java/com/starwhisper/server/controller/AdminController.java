@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,15 +35,18 @@ public class AdminController {
   private final AdminUserService adminUserService;
   private final AppConfigService appConfigService;
   private final com.starwhisper.server.repository.FeedbackRepository feedbackRepository;
+  private final com.starwhisper.server.service.DailyFortuneNotifyJob dailyNotifyJob;
 
   public AdminController(AdminStatsService adminStatsService,
                          AdminUserService adminUserService,
                          AppConfigService appConfigService,
-                         com.starwhisper.server.repository.FeedbackRepository feedbackRepository) {
+                         com.starwhisper.server.repository.FeedbackRepository feedbackRepository,
+                         com.starwhisper.server.service.DailyFortuneNotifyJob dailyNotifyJob) {
     this.adminStatsService = adminStatsService;
     this.adminUserService = adminUserService;
     this.appConfigService = appConfigService;
     this.feedbackRepository = feedbackRepository;
+    this.dailyNotifyJob = dailyNotifyJob;
   }
 
   /* ===== 模块一：数据总览 ===== */
@@ -154,6 +158,21 @@ public class AdminController {
     data.put("total", result.getTotalElements());
     data.put("items", items);
     return ResponseEntity.ok(Result.ok0(data));
+  }
+
+  /* ===== 模块五：订阅推送 ===== */
+
+  /**
+   * 手动触发一次「每日运势」推送：POST /api/admin/notify/daily/run
+   *
+   * 什么时候用：刚接上模板 ID、或者怀疑推送没发出去时，不用等到早上 8 点。
+   * 返回 { skipped, reason?, total, success, failed }，
+   * 其中 skipped=true 会附带原因（模板没配 / 没人授权 / access_token 取不到），
+   * 这三种情况的排查方向完全不同。
+   */
+  @PostMapping("/notify/daily/run")
+  public ResponseEntity<Result<Map<String, Object>>> runDailyNotify() {
+    return ResponseEntity.ok(Result.ok0(dailyNotifyJob.runDailyPush()));
   }
 
   /* ===== 小工具 ===== */
