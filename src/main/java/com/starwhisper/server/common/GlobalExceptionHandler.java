@@ -12,6 +12,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理器：所有 Controller 抛出的异常统一在这里兜底，
@@ -112,6 +114,24 @@ public class GlobalExceptionHandler {
     log.warn("业务异常：{} {}，原因={}", request.getMethod(), request.getRequestURI(), e.getMessage());
     int code = (e instanceof IllegalArgumentException) ? 400 : 500;
     return Result.error(code, e.getMessage());
+  }
+
+  /**
+   * 请求了一个不存在的路径（404）。
+   *
+   * 之前这种情况会落到兜底分支：打一条 ERROR **加完整堆栈**，还返回 500
+   * （"服务器开小差了"）。但路径不存在既不是服务端故障、也不是值得排查的异常——
+   * 真实来源通常是外部扫描器在猜接口（线上日志里出现过 GET /api/config，
+   * 而后端并没有这个路由）。一条 50 行堆栈会把这些噪音埋掉真正的错误。
+   *
+   * 保持项目约定：HTTP 状态码仍是 200，业务码 404，前端按 code 判断。
+   */
+  @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+  public Result<Void> handleNotFound(Exception e, HttpServletRequest request) {
+    markFailed(request);
+    // 用 info 且不带异常对象：只留一行时间线，不产生堆栈
+    log.info("路径不存在：{} {}", request.getMethod(), request.getRequestURI());
+    return Result.error(404, "接口不存在");
   }
 
   /** 兜底处理所有未捕获异常 */
