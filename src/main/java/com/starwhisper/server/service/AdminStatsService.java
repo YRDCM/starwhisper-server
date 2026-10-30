@@ -126,8 +126,8 @@ public class AdminStatsService {
     LocalDateTime end = today.plusDays(1).atStartOfDay();
     String[][] modules = {
         {"fortune", "星运浏览"}, {"tarot", "塔罗抽牌"}, {"match", "星座配对"},
-        // 八卦/每日一卦已按平台要求下线，这里保留计数但标注状态，避免大盘上看不出它已经不在服务
-        {"bagua", "八卦（已下线）"}, {"hexagram", "每日一卦（已下线）"},
+        // 八卦/每日一卦已按平台要求下线，这里保留计数并带 offline 标记，避免大盘上看不出它已经不在服务
+        {"bagua", "八卦"}, {"hexagram", "每日一卦"},
         {"checkin", "每日打卡"}, {"ai", "AI 解读"}
     };
     List<Map<String, Object>> list = new ArrayList<>();
@@ -135,12 +135,20 @@ public class AdminStatsService {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("key", m[0]);
       item.put("name", m[1]);
+      item.put("offline", OFFLINE_MODULES.contains(m[0]));
       item.put("user", usageEventRepository.countByModuleAndUserIdIsNotNullAndCreatedAtBetween(m[0], dayStart, end));
       item.put("guest", usageEventRepository.countByModuleAndUserIdIsNullAndCreatedAtBetween(m[0], dayStart, end));
       list.add(item);
     }
     return list;
   }
+
+  /**
+   * 已按平台要求下线、但历史数据仍保留用于对照的板块。
+   * 名字里不再带「（已下线）」——那会让 88px 宽的标签列折成两行；
+   * 改由 offline 标记交给前端用灰色 + 小标签表达。
+   */
+  private static final java.util.Set<String> OFFLINE_MODULES = java.util.Set.of("bagua", "hexagram");
 
   /**
    * 板块使用次数（全量累计）：
@@ -151,9 +159,9 @@ public class AdminStatsService {
     List<Map<String, Object>> list = new ArrayList<>();
     list.add(moduleItem("tarot", "塔罗抽牌", userHistoryRepository.countByType("TAROT")));
     list.add(moduleItem("match", "星座配对", userHistoryRepository.countByType("MATCH")));
-    // 已下线板块：保留历史累计用于对照，名称标注清楚，避免误以为是现役功能
-    list.add(moduleItem("bagua", "八卦（已下线）", userHistoryRepository.countByType("BAGUA")));
-    list.add(moduleItem("hexagram", "每日一卦（已下线）", userHistoryRepository.countByType("hexagram")));
+    // 已下线板块：保留历史累计用于对照，用 offline 标记，避免被误认为是现役功能
+    list.add(moduleItem("bagua", "八卦", userHistoryRepository.countByType("BAGUA")));
+    list.add(moduleItem("hexagram", "每日一卦", userHistoryRepository.countByType("hexagram")));
     list.add(moduleItem("checkin", "每日打卡", checkInRepository.count()));
     list.add(moduleItem("fortune", "星运浏览", null)); // 未埋点
     return list;
@@ -164,6 +172,7 @@ public class AdminStatsService {
     item.put("key", key);
     item.put("name", name);
     item.put("count", count);
+    item.put("offline", OFFLINE_MODULES.contains(key));
     return item;
   }
 
