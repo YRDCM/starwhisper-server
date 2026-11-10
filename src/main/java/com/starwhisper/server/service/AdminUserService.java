@@ -7,6 +7,7 @@ import com.starwhisper.server.repository.AppUserRepository;
 import com.starwhisper.server.repository.CheckInRepository;
 import com.starwhisper.server.repository.UserHistoryRepository;
 import com.starwhisper.server.repository.UserSessionRepository;
+import com.starwhisper.server.repository.UsageEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -49,6 +50,7 @@ public class AdminUserService {
   private final CheckInRepository checkInRepository;
   private final UserHistoryRepository userHistoryRepository;
   private final UserSessionRepository userSessionRepository;
+  private final UsageEventRepository usageEventRepository;
   private final CheckInService checkInService;
   private final ObjectMapper objectMapper;
 
@@ -56,12 +58,14 @@ public class AdminUserService {
                           CheckInRepository checkInRepository,
                           UserHistoryRepository userHistoryRepository,
                           UserSessionRepository userSessionRepository,
+                          UsageEventRepository usageEventRepository,
                           CheckInService checkInService,
                           ObjectMapper objectMapper) {
     this.appUserRepository = appUserRepository;
     this.checkInRepository = checkInRepository;
     this.userHistoryRepository = userHistoryRepository;
     this.userSessionRepository = userSessionRepository;
+    this.usageEventRepository = usageEventRepository;
     this.checkInService = checkInService;
     this.objectMapper = objectMapper;
   }
@@ -90,11 +94,17 @@ public class AdminUserService {
       }
     }
 
-    // 最近活跃：user_session 里每个用户最近一次的 created_at
+    // 最近活跃：user_session 只是登录时间（token 有效期内不刷新），
+    // 再叠加 usage_event 里最近一次有埋点的行为时间，两者取大，才是真实活跃
     Map<Long, LocalDateTime> lastActive = new HashMap<>();
     if (!ids.isEmpty()) {
       for (Object[] row : userSessionRepository.findLastActiveAtByUserIdIn(ids)) {
         lastActive.put((Long) row[0], (LocalDateTime) row[1]);
+      }
+      for (Object[] row : usageEventRepository.findLastActiveAtByUserIdIn(ids)) {
+        Long uid = (Long) row[0];
+        LocalDateTime t = (LocalDateTime) row[1];
+        lastActive.merge(uid, t, (a, b) -> a.isAfter(b) ? a : b);
       }
     }
 

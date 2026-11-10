@@ -7,6 +7,7 @@ import com.starwhisper.server.repository.AppUserRepository;
 import com.starwhisper.server.repository.CheckInRepository;
 import com.starwhisper.server.repository.UserHistoryRepository;
 import com.starwhisper.server.repository.UserSessionRepository;
+import com.starwhisper.server.repository.UsageEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -30,11 +31,12 @@ class AdminUserServiceTests {
   private final CheckInRepository checkins = mock(CheckInRepository.class);
   private final UserHistoryRepository histories = mock(UserHistoryRepository.class);
   private final UserSessionRepository sessions = mock(UserSessionRepository.class);
+  private final UsageEventRepository usageEvents = mock(UsageEventRepository.class);
   private final CheckInService checkInService = mock(CheckInService.class);
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   private AdminUserService service() {
-    return new AdminUserService(users, checkins, histories, sessions, checkInService, objectMapper);
+    return new AdminUserService(users, checkins, histories, sessions, usageEvents, checkInService, objectMapper);
   }
 
   private AppUser user(Long id, String nickname) {

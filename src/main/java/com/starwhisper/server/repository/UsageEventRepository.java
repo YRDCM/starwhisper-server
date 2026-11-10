@@ -44,4 +44,8 @@ public interface UsageEventRepository extends JpaRepository<UsageEvent, Long> {
 
   // 游客今日事件流（后台明细查看）
   List<UsageEvent> findTop100ByUserIdIsNullAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(LocalDateTime since);
+
+  // 各用户最近一次有埋点的行为时间（后台用户列表「最近活跃」用，比 user_session 更准确）
+  @Query("select e.userId, max(e.createdAt) from UsageEvent e where e.userId in :ids group by e.userId")
+  List<Object[]> findLastActiveAtByUserIdIn(@Param("ids") List<Long> ids);
 }
