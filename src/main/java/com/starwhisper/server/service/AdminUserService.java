@@ -99,6 +99,7 @@ public class AdminUserService {
     }
 
     List<Map<String, Object>> list = new ArrayList<>();
+    LocalDate today = LocalDate.now();
     for (AppUser user : users) {
       List<LocalDate> dates = checkinDates.getOrDefault(user.getId(), List.of());
       Map<String, Object> item = new LinkedHashMap<>();
@@ -109,6 +110,7 @@ public class AdminUserService {
       item.put("createdAt", user.getCreatedAt());
       item.put("totalCheckins", dates.size());
       item.put("currentStreak", currentStreak(dates));
+      item.put("todayCheckin", dates.contains(today)); // 今日是否已打卡（列表行直接可见）
       item.put("lastActiveAt", lastActive.get(user.getId()));
       list.add(item);
     }
