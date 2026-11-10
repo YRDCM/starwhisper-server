@@ -122,7 +122,38 @@ public class AdminStatsService {
     data.put("todayModuleSplit", todayModuleSplit(today, dayStart));
     data.put("todayGuestActive", usageEventRepository.countDistinctGuestIpsSince(dayStart));
     data.put("todayUserIps", usageEventRepository.countDistinctUserIpsSince(dayStart));
+    // 留存指标：次日留存 / 7 日留存 / 游客回访率（各 {total, retained}）
+    data.put("retention", retention(today, dayStart, activeUsers));
     return data;
+  }
+
+  /**
+   * 留存指标：
+   * - 次日留存：昨日注册用户中，今日仍活跃（与 todayActive 同口径并集）的人数
+   * - 7 日留存：7 天前注册用户中，今日仍活跃的人数
+   * - 游客回访：昨日活跃游客 IP 中，今日再次出现的人数（IP 去重口径，受 NAT/换 IP 影响仅供参考）
+   * 各项返回 {total, retained/returned}，total 为 0 时前端显示「—」
+   */
+  private Map<String, Object> retention(LocalDate today, LocalDateTime dayStart, Set<Long> activeToday) {
+    Map<String, Object> ret = new LinkedHashMap<>();
+    LocalDateTime yesterdayStart = today.minusDays(1).atStartOfDay();
+    LocalDateTime day7Start = today.minusDays(7).atStartOfDay();
+    LocalDateTime day7End = today.minusDays(6).atStartOfDay();
+    LocalDateTime tomorrowStart = today.plusDays(1).atStartOfDay();
+
+    Set<Long> newYesterday = new HashSet<>(appUserRepository.findIdsByCreatedAtBetween(yesterdayStart, dayStart));
+    long retained1 = newYesterday.stream().filter(activeToday::contains).count();
+    ret.put("nextDay", Map.of("total", newYesterday.size(), "retained", retained1));
+
+    Set<Long> new7dAgo = new HashSet<>(appUserRepository.findIdsByCreatedAtBetween(day7Start, day7End));
+    long retained7 = new7dAgo.stream().filter(activeToday::contains).count();
+    ret.put("day7", Map.of("total", new7dAgo.size(), "retained", retained7));
+
+    Set<String> guestYesterday = new HashSet<>(usageEventRepository.findDistinctGuestIpsBetween(yesterdayStart, dayStart));
+    Set<String> guestToday = new HashSet<>(usageEventRepository.findDistinctGuestIpsBetween(dayStart, tomorrowStart));
+    long returned = guestYesterday.stream().filter(guestToday::contains).count();
+    ret.put("guestReturn", Map.of("total", guestYesterday.size(), "returned", returned));
+    return ret;
   }
 
   /** 今日板块使用：登录用户次数 / 游客次数（埋点表 usage_event 按天聚合） */

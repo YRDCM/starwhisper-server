@@ -4,6 +4,8 @@ import com.starwhisper.server.entity.AppUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,6 +27,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
   // 统计：某天注册的用户数（运营日报用）
   long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+  // 某天注册的用户 id 列表（留存计算用：注册日 → 后续活跃比对）
+  @Query("select u.id from AppUser u where u.createdAt between :start and :end")
+  List<Long> findIdsByCreatedAtBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
   List<AppUser> findByCreatedAtGreaterThanEqual(LocalDateTime since);
 
