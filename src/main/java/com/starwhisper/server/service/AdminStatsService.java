@@ -104,6 +104,10 @@ public class AdminStatsService {
     data.put("tarotTotal", userHistoryRepository.countByType("TAROT"));
     data.put("baguaTotal", userHistoryRepository.countByType("BAGUA"));
     data.put("matchTotal", userHistoryRepository.countByType("MATCH"));
+    // 今日使用量（埋点表口径，含游客）：总览卡片按用户要求展示今日而非累计
+    data.put("tarotToday", usageEventRepository.countByModuleAndCreatedAtGreaterThanEqual("tarot", dayStart));
+    data.put("baguaToday", usageEventRepository.countByModuleAndCreatedAtGreaterThanEqual("bagua", dayStart));
+    data.put("matchToday", usageEventRepository.countByModuleAndCreatedAtGreaterThanEqual("match", dayStart));
     data.put("spreadDist", spreadDist());
     data.put("dailyNewUsers", dailyNewUsers(weekAgo));
     data.put("dailyActive", dailyActive(today));
