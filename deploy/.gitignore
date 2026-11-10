@@ -1,0 +1,27 @@
+# 本目录只放脚本与配置模板；下面这些是历史上容易误入版本库的东西
+
+# 本地环境变量（含服务器地址与密钥路径）
+.env
+
+# 任何本地密钥 / 证书 / 私钥
+*.local
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# 构建产物：52MB 的 jar，走 put-dist.py 上传，不进库
+*.jar
+
+# 数据库导出：含 openid / 昵称等用户数据
+*.sql
+*.sql.gz
+
+# 配置文件的历史快照（内容是 base64 的明文密钥）
+prop*.json
+
+# 接口样例与调试日志
+*-online.json
+*-sample.txt
+test*.log
+backup/
