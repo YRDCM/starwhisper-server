@@ -70,13 +70,18 @@ public class AdminController {
 
   /* ===== 模块二：用户管理 ===== */
 
-  /** 用户分页列表：GET /api/admin/users?page=0&size=20&keyword= */
+  /**
+   * 用户分页列表：GET /api/admin/users?page=0&size=20&keyword=&todayCheckin=true
+   *
+   * todayCheckin=true 只返回今日已打卡的用户（筛选在 SQL 层完成，分页与总数才准确）。
+   */
   @GetMapping("/users")
   public ResponseEntity<Result<Map<String, Object>>> users(
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
-      @RequestParam(required = false) String keyword) {
-    return ResponseEntity.ok(Result.ok0(adminUserService.users(page, size, keyword)));
+      @RequestParam(required = false) String keyword,
+      @RequestParam(defaultValue = "false") boolean todayCheckin) {
+    return ResponseEntity.ok(Result.ok0(adminUserService.users(page, size, keyword, todayCheckin)));
   }
 
   /** 用户详情：GET /api/admin/users/{id}（用户不存在 404） */
