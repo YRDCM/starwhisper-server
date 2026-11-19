@@ -75,13 +75,28 @@ public class AdminUserService {
    * keyword 非空时按昵称模糊匹配（忽略大小写）
    */
   public Map<String, Object> users(int page, int size, String keyword) {
+    return users(page, size, keyword, false);
+  }
+
+  /**
+   * 用户分页列表
+   *
+   * @param onlyTodayCheckin true 时只返回「今天有打卡记录」的用户。
+   *                         筛选在 SQL 里完成（见 AppUserRepository.search），
+   *                         否则分页和总数都会算错。
+   */
+  public Map<String, Object> users(int page, int size, String keyword, boolean onlyTodayCheckin) {
     int safePage = Math.max(0, page);
     int safeSize = size <= 0 ? 20 : Math.min(size, MAX_PAGE_SIZE);
     Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "id"));
 
-    Page<AppUser> result = StringUtils.hasText(keyword)
-        ? appUserRepository.findByNicknameContainingIgnoreCase(keyword.trim(), pageable)
-        : appUserRepository.findAll(pageable);
+    String kw = StringUtils.hasText(keyword) ? keyword.trim() : "";
+    Page<AppUser> result = appUserRepository.search(
+        !kw.isEmpty(),
+        kw.isEmpty() ? "%" : "%" + kw + "%",
+        onlyTodayCheckin,
+        LocalDate.now(),
+        pageable);
 
     List<AppUser> users = result.getContent();
     List<Long> ids = users.stream().map(AppUser::getId).toList();

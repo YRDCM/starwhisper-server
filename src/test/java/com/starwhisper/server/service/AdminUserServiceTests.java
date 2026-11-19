@@ -51,7 +51,8 @@ class AdminUserServiceTests {
 
   @Test void pageAssemblesCheckinsStreakAndLastActive() {
     var pageUsers = List.of(user(2L, "星野"), user(1L, "流萤"));
-    when(users.findAll(any(Pageable.class)))
+    // 分页一律走 search(hasKeyword, pattern, onlyTodayCheckin, today, pageable)
+    when(users.search(eq(false), anyString(), eq(false), any(LocalDate.class), any(Pageable.class)))
         .thenReturn(new PageImpl<>(pageUsers, Pageable.unpaged(), 12));
 
     LocalDate today = LocalDate.now();
@@ -89,23 +90,33 @@ class AdminUserServiceTests {
   }
 
   @Test void keywordTrimsAndDelegatesToNicknameSearch() {
-    when(users.findByNicknameContainingIgnoreCase(eq("星"), any(Pageable.class)))
+    when(users.search(eq(true), eq("%星%"), eq(false), any(LocalDate.class), any(Pageable.class)))
         .thenReturn(new PageImpl<>(List.of(user(3L, "星尘")), Pageable.unpaged(), 1));
     Map<String, Object> data = service().users(0, 20, "  星  ");
     assertEquals(1L, data.get("total"));
-    verify(users).findByNicknameContainingIgnoreCase(eq("星"), any(Pageable.class));
-    verify(users, never()).findAll(any(Pageable.class));
+    // 两侧空格要去掉，pattern 必须包成 %星%
+    verify(users).search(eq(true), eq("%星%"), eq(false), any(LocalDate.class), any(Pageable.class));
   }
 
   @Test void pageParamsAreSanitized() {
-    when(users.findAll(any(Pageable.class)))
+    when(users.search(anyBoolean(), anyString(), anyBoolean(), any(LocalDate.class), any(Pageable.class)))
         .thenReturn(new PageImpl<>(List.of(), Pageable.unpaged(), 0));
     Map<String, Object> data = service().users(-3, 9999, "");
     assertEquals(0, data.get("page"));                             // 负页钳到 0
     assertEquals(AdminUserService.MAX_PAGE_SIZE, data.get("size")); // 超大 size 钳到上限
-    // 空 keyword 视为未搜索
-    verify(users).findAll(any(Pageable.class));
-    verify(users, never()).findByNicknameContainingIgnoreCase(any(), any());
+    // 空 keyword → hasKeyword=false，不按昵称过滤
+    verify(users).search(eq(false), anyString(), eq(false), any(LocalDate.class), any(Pageable.class));
+  }
+
+  @Test void todayCheckinFlagIsPassedThroughToQuery() {
+    // 「只看今日打卡」必须在 SQL 层筛选：在内存里过滤会把每页条数和 total 都算错
+    when(users.search(anyBoolean(), anyString(), eq(true), any(LocalDate.class), any(Pageable.class)))
+        .thenReturn(new PageImpl<>(List.of(user(5L, "打卡人")), Pageable.unpaged(), 1));
+
+    Map<String, Object> data = service().users(0, 20, null, true);
+
+    assertEquals(1L, data.get("total"));
+    verify(users).search(eq(false), anyString(), eq(true), any(LocalDate.class), any(Pageable.class));
   }
 
   @Test void streakMatchesCheckInServiceSemantics() {
