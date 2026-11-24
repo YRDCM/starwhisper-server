@@ -1,0 +1,11 @@
+-- ============================================================
+-- V1：基线占位
+--
+-- 这个文件是**空迁移**，存在的唯一目的是给已有数据库一个 baseline 锚点：
+--   spring.flyway.baseline-on-migrate=true
+--   spring.flyway.baseline-version=1
+-- 已有数据的库首次接入 Flyway 时会被标记为"已经跑到 V1"，然后只执行 V2 及之后。
+--
+-- ⚠️ 全新空库请先导入完整结构（deploy/starwhisper.sql 或 mysqldump 产物）再启动应用，
+--    因为 spring.jpa.hibernate.ddl-auto=validate 只校验、不建表。
+-- ============================================================

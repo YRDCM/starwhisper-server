@@ -1,0 +1,156 @@
+package com.starwhisper.server.service;
+
+import com.starwhisper.server.dto.DrawResultVO;
+import com.starwhisper.server.dto.DrawnCardVO;
+import com.starwhisper.server.dto.TarotCardVO;
+import com.starwhisper.server.entity.Sign;
+import com.starwhisper.server.entity.TarotCard;
+import com.starwhisper.server.repository.SignRepository;
+import com.starwhisper.server.repository.TarotCardRepository;
+import org.springframework.stereotype.Service;
+
+import java.security.SecureRandom;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+/**
+ * 塔罗业务层
+ * 抽牌用 SecureRandom（真随机，每次结果都不同）；
+ * 每日一牌用种子混洗（伪随机，同一天同一星座结果固定），两种场景两种随机策略
+ */
+@Service
+public class TarotService {
+
+  // 牌组展示顺序：大阿尔卡纳在前，小阿尔卡纳按 权杖→圣杯→宝剑→星币
+  private static final Map<String, Integer> GROUP_ORDER = Map.of(
+      "MAJOR", 0, "WANDS", 1, "CUPS", 2, "SWORDS", 3, "PENTACLES", 4);
+
+  // 每日一牌的盐值：和运势模块的随机流区分开（运势主流程是 0，宜忌是 1/2）
+  private static final long TAROT_DAILY_SALT = 100;
+
+  private final TarotCardRepository tarotCardRepository;
+  private final SignRepository signRepository;
+  private final FortuneGenerator fortuneGenerator;
+
+  public TarotService(TarotCardRepository tarotCardRepository,
+                      SignRepository signRepository,
+                      FortuneGenerator fortuneGenerator) {
+    this.tarotCardRepository = tarotCardRepository;
+    this.signRepository = signRepository;
+    this.fortuneGenerator = fortuneGenerator;
+  }
+
+  /**
+   * 全部 78 张牌：大阿尔卡纳 0-21 在前，然后四个花色各 1-14
+   */
+  public List<TarotCardVO> listCards() {
+    return orderedDeck().stream().map(TarotCardVO::of).toList();
+  }
+
+  /**
+   * 按牌阵随机抽牌（不传 cardNos 的旧行为，保持不变）：
+   * 一次抽牌内不会有重复的牌，每张牌独立掷 50/50 决定正逆位，
+   * 第 i 张牌放到牌阵的第 i 个牌位上
+   */
+  public DrawResultVO draw(TarotSpread spread) {
+    return draw(spread, null);
+  }
+
+  /**
+   * 抽牌（v5：支持用户自行选牌）
+   * cardNos 为 null → 整副洗牌后按顺序取（纯随机，兼容旧端）；
+   * cardNos 指定 → 按用户选定的序号取牌（校验数量/越界/重复），
+   * 无论哪条路径，正逆位都由后端 SecureRandom 掷定（保证记录一致性）
+   */
+  public DrawResultVO draw(TarotSpread spread, List<Integer> cardNos) {
+    List<TarotCard> deck = orderedDeck();
+    // SecureRandom：抽牌是"占卜"场景，要的是不可预测的真随机
+    SecureRandom secureRandom = new SecureRandom();
+
+    List<TarotCard> picked;
+    if (cardNos == null) {
+      List<TarotCard> shuffled = new ArrayList<>(deck);
+      java.util.Collections.shuffle(shuffled, secureRandom);
+      picked = shuffled.subList(0, spread.getCount());
+    } else {
+      picked = pickUserCards(deck, spread, cardNos);
+    }
+
+    String[] positions = spread.getPositions();
+    String[] positionDescs = spread.getPositionDescs();
+    List<DrawnCardVO> drawn = new ArrayList<>();
+    for (int i = 0; i < spread.getCount(); i++) {
+      boolean upright = secureRandom.nextBoolean();
+      drawn.add(DrawnCardVO.of(picked.get(i), upright, positions[i], positionDescs[i]));
+    }
+    return new DrawResultVO(spread.getKey(), spread.getName(), drawn);
+  }
+
+  /**
+   * 用户选牌校验 + 取牌：数量必须等于牌阵张数、序号 1-78、不允许重复
+   */
+  private List<TarotCard> pickUserCards(List<TarotCard> deck, TarotSpread spread, List<Integer> cardNos) {
+    if (cardNos.size() != spread.getCount()) {
+      throw new IllegalArgumentException(
+          "选牌数量不符：牌阵「" + spread.getName() + "」需要 " + spread.getCount()
+              + " 张，收到 " + cardNos.size() + " 张");
+    }
+    List<TarotCard> picked = new ArrayList<>();
+    for (Integer no : cardNos) {
+      if (no == null || no < 1 || no > deck.size()) {
+        throw new IllegalArgumentException("无效的牌序号：" + no + "（合法范围 1-" + deck.size() + "）");
+      }
+      picked.add(deck.get(no - 1)); // 序号 1 起始，列表 0 起始
+    }
+    long distinct = picked.stream().map(TarotCard::getId).distinct().count();
+    if (distinct != picked.size()) {
+      throw new IllegalArgumentException("选牌序号重复，每张牌只能选一次");
+    }
+    return picked;
+  }
+
+  /**
+   * 每日一牌：同一星座同一天永远抽到同一张牌同一个朝向（确定性），
+   * 不传星座则是"今日通用牌"。盐值 100 与运势模块的随机流隔离
+   */
+  public DrawnCardVO daily(String signQuery) {
+    Long signId = resolveSignIdOrZero(signQuery);
+    LocalDate today = LocalDate.now();
+
+    List<TarotCard> deck = orderedDeck();
+    Random random = fortuneGenerator.newSeededRandom(signId, today, TAROT_DAILY_SALT);
+    int index = random.nextInt(deck.size());
+    boolean upright = random.nextBoolean();
+
+    return DrawnCardVO.of(deck.get(index), upright, null);
+  }
+
+  /**
+   * 按固定顺序取整副牌（排序而非依赖数据库 id，保证结果稳定）
+   */
+  private List<TarotCard> orderedDeck() {
+    List<TarotCard> cards = new ArrayList<>(tarotCardRepository.findAll());
+    cards.sort(Comparator
+        .comparingInt((TarotCard c) -> GROUP_ORDER.getOrDefault(c.getArcanaGroup(), 99))
+        .thenComparingInt(TarotCard::getCardNumber));
+    return cards;
+  }
+
+  /**
+   * 解析星座参数：传了就必须认识（英文名忽略大小写或中文名），没传返回 0 表示"通用"
+   */
+  private Long resolveSignIdOrZero(String signQuery) {
+    if (signQuery == null || signQuery.isBlank()) {
+      return 0L; // 不传星座 = 今日通用牌
+    }
+    String query = signQuery.trim();
+    return signRepository.findByNameEnIgnoreCase(query)
+        .or(() -> signRepository.findByName(query))
+        .map(Sign::getId)
+        .orElseThrow(() -> new IllegalArgumentException("不认识的星座：" + query + "（支持英文名或中文名，如 aries / 白羊座）"));
+  }
+}

@@ -1,0 +1,243 @@
+package com.starwhisper.server.service;
+
+import com.starwhisper.server.dto.FortuneVO;
+import com.starwhisper.server.dto.WeeklyFortuneVO;
+import com.starwhisper.server.entity.FortuneDaily;
+import com.starwhisper.server.entity.Sign;
+import com.starwhisper.server.repository.FortuneDailyRepository;
+import com.starwhisper.server.repository.SignRepository;
+import com.starwhisper.server.service.impl.LocalFortuneProvider;
+import com.starwhisper.server.service.impl.ShowapiFortuneProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 每日运势业务层
+ *
+ * 数据源策略：
+ * · 今天：优先 ShowAPI（如果启用且未熔断/未超配额），失败自动回退本地生成，绝不让外部接口拖垮我们
+ * · 未来：**不再请求 ShowAPI**。ShowAPI 只返回"今天"的内容，拿它写到未来日期等于用今天的数据冒充明天，
+ *   之前就是这么做的；现在未来日期一律用本地生成，并且不消耗外部配额。
+ * · 过去：ShowAPI 不提供历史数据，直接查库或本地生成
+ *
+ * 核心思路：先查库，库里没有（或今天这条还是本地兜底生成的）就取数并落库。
+ */
+@Service
+public class FortuneService {
+
+  private static final Logger log = LoggerFactory.getLogger(FortuneService.class);
+
+  /** 外部调用闸门的频道名（日运与周运共用同一个 ShowAPI 配额池） */
+  static final String CHANNEL_SHOWAPI = "showapi-fortune";
+
+  private final FortuneDailyRepository fortuneDailyRepository;
+  private final SignRepository signRepository;
+  private final LocalFortuneProvider localFortuneProvider;
+  private final ShowapiFortuneProvider showapiFortuneProvider;
+  private final ExternalCallGuard guard;
+
+  public FortuneService(FortuneDailyRepository fortuneDailyRepository,
+                        SignRepository signRepository,
+                        LocalFortuneProvider localFortuneProvider,
+                        ShowapiFortuneProvider showapiFortuneProvider,
+                        ExternalCallGuard guard) {
+    this.fortuneDailyRepository = fortuneDailyRepository;
+    this.signRepository = signRepository;
+    this.localFortuneProvider = localFortuneProvider;
+    this.showapiFortuneProvider = showapiFortuneProvider;
+    this.guard = guard;
+  }
+
+  /**
+   * 查某星座某一天的运势，没有就自动生成/抓取
+   *
+   * @param signQuery 星座标识：英文名（如 aries，忽略大小写）或中文名（如 天秤座）
+   * @param date      运势日期
+   */
+  public FortuneVO getFortune(String signQuery, LocalDate date) {
+    Sign sign = resolveSign(signQuery);
+    FortuneDaily fortune = getOrFetch(sign, date);
+    return toVO(fortune, sign);
+  }
+
+  /**
+   * 查某星座最近 7 天运势（今天往前 6 天），缺失的日期自动生成
+   * 返回按日期升序；今天的可能是 SHOWAPI，过去的是 LOCAL，混合来源属正常
+   */
+  public List<FortuneVO> getWeek(String signQuery) {
+    Sign sign = resolveSign(signQuery);
+    LocalDate today = LocalDate.now();
+
+    List<FortuneVO> week = new ArrayList<>();
+    for (int i = 6; i >= 0; i--) {
+      LocalDate date = today.minusDays(i);
+      week.add(toVO(getOrFetch(sign, date), sign));
+    }
+    return week;
+  }
+
+  /**
+   * 本周运势：GET /api/fortune/weekly 的业务层。
+   * 与日运不同，周运没有本地生成器兜底（本地池编不出真实的一周文案）——
+   * 数据源未启用、熔断中或调用失败都直接抛异常，由全局异常处理器返回错误，
+   * 前端显示"周运暂时不可用"的错误态，绝不拿编造内容冒充
+   */
+  public WeeklyFortuneVO getWeeklyFortune(String signQuery) {
+    Sign sign = resolveSign(signQuery);
+    if (!showapiFortuneProvider.isActive()) {
+      throw new IllegalStateException("本周运势数据源未配置，暂时不可用");
+    }
+    if (!guard.allow(CHANNEL_SHOWAPI)) {
+      throw new IllegalStateException("本周运势今日额度已用完或数据源正忙，请稍后再试");
+    }
+    try {
+      WeeklyFortuneVO vo = showapiFortuneProvider.fetchWeekly(sign);
+      guard.recordSuccess(CHANNEL_SHOWAPI);
+      return vo;
+    } catch (RuntimeException e) {
+      guard.recordFailure(CHANNEL_SHOWAPI);
+      throw e;
+    }
+  }
+
+  /**
+   * 为某一天生成全部 12 星座的运势（已存在的跳过，幂等）
+   * 批量预生成固定走本地生成器，不消耗外部 API 额度
+   *
+   * @return 本次实际新增的条数
+   */
+  public int generateForDate(LocalDate date) {
+    List<Sign> signs = signRepository.findAllByOrderByIdAsc();
+
+    int created = 0;
+    for (Sign sign : signs) {
+      if (fortuneDailyRepository.findBySignIdAndFortuneDate(sign.getId(), date).isPresent()) {
+        continue; // 已有数据，跳过
+      }
+      try {
+        fortuneDailyRepository.save(localFortuneProvider.fetch(sign, date));
+        created++;
+      } catch (DataIntegrityViolationException e) {
+        // 并发下别人已经写入，等价于"已存在"，跳过即可
+        log.debug("生成运势时发现并发写入，跳过：sign={}, date={}", sign.getNameEn(), date);
+      }
+    }
+    return created;
+  }
+
+  /**
+   * 取数主流程：
+   * 1. 只有「今天」且 ShowAPI 启用、闸门放行时才请求外部接口
+   * 2. 外部失败 → 记一次失败（连续失败会触发熔断），回退本地生成
+   * 3. 其余情况 → 查库，没有再本地生成
+   *
+   * 并发保护：不使用"先查后插"的两步写入，而是捕获唯一键冲突后回读，
+   * 这样两个请求同时到达同一个 (sign, date) 时不会给用户报 500。
+   */
+  private FortuneDaily getOrFetch(Sign sign, LocalDate date) {
+    Optional<FortuneDaily> existing =
+        fortuneDailyRepository.findBySignIdAndFortuneDate(sign.getId(), date);
+
+    boolean isToday = date.equals(LocalDate.now());
+    boolean needShowapi = isToday && showapiFortuneProvider.isActive()
+        && (existing.isEmpty() || !"SHOWAPI".equals(existing.get().getSource()));
+
+    if (needShowapi && guard.allow(CHANNEL_SHOWAPI)) {
+      try {
+        FortuneDaily fetched = showapiFortuneProvider.fetch(sign, date);
+        guard.recordSuccess(CHANNEL_SHOWAPI);
+        return upsert(fetched, existing);
+      } catch (Exception e) {
+        // 外部接口挂了/超时/返回错误码都不应该让用户看到 500，回退本地
+        guard.recordFailure(CHANNEL_SHOWAPI);
+        log.warn("ShowAPI 运势获取失败，回退本地生成：sign={}, date={}, 原因={}",
+            sign.getNameEn(), date, e.getMessage());
+      }
+    }
+
+    if (existing.isPresent()) {
+      return existing.get();
+    }
+    return upsert(localFortuneProvider.fetch(sign, date), Optional.empty());
+  }
+
+  /**
+   * 落库：有旧行就沿用 id 覆盖（把本地兜底行升级成 SHOWAPI 行），
+   * 没有就插入；并发插入撞唯一键时回读对方写入的那行
+   */
+  private FortuneDaily upsert(FortuneDaily candidate, Optional<FortuneDaily> existing) {
+    existing.ifPresent(old -> candidate.setId(old.getId()));
+    try {
+      return fortuneDailyRepository.save(candidate);
+    } catch (DataIntegrityViolationException e) {
+      log.info("并发写入同一天运势，回读已有行：sign={}, date={}",
+          candidate.getSignId(), candidate.getFortuneDate());
+      return fortuneDailyRepository
+          .findBySignIdAndFortuneDate(candidate.getSignId(), candidate.getFortuneDate())
+          .orElseThrow(() -> e);
+    }
+  }
+
+  /**
+   * 每日运势预热：定时任务调用，把 12 星座今天的运势提前生成/拉取并落库，
+   * 用户访问时直接读库秒回。单星座失败不中断整体（provider 链内部已有回退，
+   * 这里的 try-catch 是最后一道保险）
+   */
+  public void prewarmToday() {
+    List<Sign> signs = signRepository.findAllByOrderByIdAsc();
+    LocalDate today = LocalDate.now();
+
+    int success = 0;
+    for (Sign sign : signs) {
+      try {
+        getFortune(sign.getNameEn(), today);
+        success++;
+      } catch (Exception e) {
+        log.warn("预热失败：sign={}, 原因={}", sign.getNameEn(), e.getMessage());
+      }
+      // 免费档接口有频率限制，12 个星座连着打会触发限流（实测间隔 ~60ms 时后 8 个全被弹回），
+      // 每个星座之间歇 1 秒，宁可预热慢一点也别被限流逼回本地兜底。
+      // 注意：这会占住调度线程约 12 秒，所以 spring.task.scheduling.pool.size 配了 >1，
+      // 避免把同时段的其它定时任务一起堵住。
+      try {
+        Thread.sleep(1000);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    log.info("每日运势预热完成：成功 {}/{}", success, signs.size());
+  }
+
+  /**
+   * 解析星座参数：先试英文名（忽略大小写），再试中文名，都不认识就报错
+   */
+  private Sign resolveSign(String signQuery) {
+    if (signQuery == null || signQuery.isBlank()) {
+      throw new IllegalArgumentException("缺少星座参数 sign");
+    }
+    String query = signQuery.trim();
+    return signRepository.findByNameEnIgnoreCase(query)
+        .or(() -> signRepository.findByName(query))
+        .orElseThrow(() -> new IllegalArgumentException(
+            "不认识的星座：" + query + "（支持英文名或中文名，如 aries / 白羊座）"));
+  }
+
+  /**
+   * 组装 VO：补上星座信息和速配星座信息
+   */
+  private FortuneVO toVO(FortuneDaily fortune, Sign sign) {
+    Sign pairSign = null;
+    if (fortune.getPairSignId() != null) {
+      pairSign = signRepository.findById(fortune.getPairSignId()).orElse(null);
+    }
+    return FortuneVO.of(fortune, sign, pairSign);
+  }
+}
