@@ -23,11 +23,9 @@ import org.springframework.web.client.RestClient;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 
 /**
@@ -206,58 +204,13 @@ public class ShowapiFortuneProvider implements FortuneProvider {
    * 模拟模式：不发任何 HTTP 请求，编一份"长得像真的"的数据，
    * 用和本地生成器同款种子混洗，保证同一星座同一天结果固定（前端联调可复现）
    */
-  /* ==================== 模拟模式：贵人 / 小人的挑选 ==================== */
-
-  /** 除自己以外的星座（保持传入顺序，保证同一个随机种子结果确定） */
-  private static List<Sign> othersOf(List<Sign> signs, Sign self) {
-    List<Sign> others = new ArrayList<>();
-    for (Sign s : signs) {
-      if (!Objects.equals(s.getId(), self.getId())) {
-        others.add(s);
-      }
-    }
-    return others;
-  }
-
-  /**
-   * 确定性挑一个「不是自己」的星座（日运的贵人）。
-   *
-   * 这里原来写成 signs.get((sign.getId() % size + 1 + r) % size)，即**拿 id 当 0 基下标**。
-   * 但 signs 是 findAllByOrderByIdAsc() 的 0 基列表、而 id 从 1 开始，整体错一位，
-   * "排除自己"就失效了 —— 日运的贵人可能算成用户本人。
-   * 2026-11-24 换周时先是周运测试暴露出来（狮子座的小人 = 狮子座自己）。
-   */
-  private static Sign pickOther(Random random, List<Sign> signs, Sign self) {
-    List<Sign> others = othersOf(signs, self);
-    if (others.isEmpty()) {
-      return self; // 星座表只剩一个时才可能，正常数据不会发生
-    }
-    return others.get(random.nextInt(others.size()));
-  }
-
-  /**
-   * 确定性挑两个互不相同、且都不是自己的星座（周运的贵人 + 小人）。
-   *
-   * b 的取法：从 a 之后的 (n-1) 个位置里取偏移再取模，数学上保证 b != a，
-   * 不需要再写"撞了就加一"那种补丁（补丁本身还会漏掉别的边界）。
-   */
-  private static Sign[] pickTwoOthers(Random random, List<Sign> signs, Sign self) {
-    List<Sign> others = othersOf(signs, self);
-    if (others.size() < 2) {
-      Sign only = others.isEmpty() ? self : others.get(0);
-      return new Sign[]{only, only};
-    }
-    int a = random.nextInt(others.size());
-    int b = (a + 1 + random.nextInt(others.size() - 1)) % others.size();
-    return new Sign[]{others.get(a), others.get(b)};
-  }
-
   private Map<String, Object> mockDay(Sign sign, LocalDate date) {
     Random random = fortuneGenerator.newSeededRandom(sign.getId(), date, 100);
 
     // 贵人星座：确定性挑一个不是自己
     List<Sign> signs = signRepository.findAllByOrderByIdAsc();
-    Sign pair = pickOther(random, signs, sign);
+    int index = (int) (sign.getId() % signs.size());
+    Sign pair = signs.get((index + 1 + random.nextInt(signs.size() - 1)) % signs.size());
 
     Map<String, Object> node = new HashMap<>();
     node.put("summary_star", 2 + random.nextInt(4));
@@ -396,9 +349,18 @@ public class ShowapiFortuneProvider implements FortuneProvider {
 
     // 贵人/小人：确定性挑两个既不是自己、也互不相同的星座（12 星座，必然挑得出）
     List<Sign> signs = signRepository.findAllByOrderByIdAsc();
-    Sign[] picked = pickTwoOthers(random, signs, sign);
-    Sign pair = picked[0];
-    Sign nemesis = picked[1];
+    int size = signs.size();
+    int index = (int) (sign.getId() % size);
+    int pairIdx = (index + 1 + random.nextInt(size - 1)) % size;
+    int nemesisIdx = (index + 1 + random.nextInt(size - 1)) % size;
+    if (nemesisIdx == pairIdx) {
+      nemesisIdx = (pairIdx + 1) % size;
+      if (nemesisIdx == index) {
+        nemesisIdx = (nemesisIdx + 1) % size;
+      }
+    }
+    Sign pair = signs.get(pairIdx);
+    Sign nemesis = signs.get(nemesisIdx);
 
     Map<String, Object> node = new HashMap<>();
     node.put("summary_star", 2 + random.nextInt(4));

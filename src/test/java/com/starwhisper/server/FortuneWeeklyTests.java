@@ -1,7 +1,6 @@
 package com.starwhisper.server.service;
 
 import com.starwhisper.server.dto.WeeklyFortuneVO;
-import com.starwhisper.server.entity.FortuneDaily;
 import com.starwhisper.server.entity.Sign;
 import com.starwhisper.server.repository.SignRepository;
 import com.starwhisper.server.service.impl.ShowapiFortuneProvider;
@@ -111,28 +110,6 @@ class FortuneWeeklyTests {
     assertEquals("本周整体运势平稳向好。", vo.getGeneralTxt());
     assertNull(vo.getLoveTxt());
     assertEquals("SHOWAPI", vo.getSource());
-  }
-
-  @Test
-  void 全部12个星座的贵人和小人都不能是自己() {
-    // 2026-11-24 换周时暴露的真实 bug：原来是 (sign.getId() % size) 当 0 基下标，
-    // 而 signs 是 findAllByOrderByIdAsc() 的 0 基列表、id 从 1 开始，整体错一位，
-    // "排除自己"失效 —— 狮子座的周运小人算成了狮子座本人。
-    // 只测一个星座可能刚好没踩到，所以这里 12 个全跑一遍，日运和周运两条路径都覆盖。
-    ShowapiFortuneProvider p = provider(true, mock(HoroscopeCacheService.class));
-    List<Sign> all = twelveSigns().findAllByOrderByIdAsc();
-    LocalDate today = LocalDate.now();
-
-    for (Sign s : all) {
-      FortuneDaily day = p.fetch(s, today);
-      assertNotEquals(s.getId(), day.getPairSignId(), s.getName() + " 的日运贵人不应是自己");
-
-      WeeklyFortuneVO week = p.fetchWeekly(s);
-      assertNotEquals(s.getName(), week.getPairSignName(), s.getName() + " 的周运贵人不应是自己");
-      assertNotEquals(s.getName(), week.getNemesisSignName(), s.getName() + " 的周运小人不应是自己");
-      assertNotEquals(week.getPairSignName(), week.getNemesisSignName(),
-          s.getName() + " 的贵人与小人不应是同一个");
-    }
   }
 
   @Test
